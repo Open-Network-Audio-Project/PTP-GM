@@ -22,7 +22,7 @@
 
 /*---------------------------- PRIVATE FUNCTIONS -----------------------------*/
 
-#ifdef DEBUG
+#if DEBUG_LEVEL >= DEBUG_MINIMAL
 /** 
  * @brief map the SYSCLK to a GPIO for inspection with an oscilloscope
 */
@@ -42,7 +42,7 @@ static void mco_setup(void)
     RCC_CFGR = (RCC_CFGR & ~(RCC_CFGR_MCOPRE_MASK << RCC_CFGR_MCO2PRE_SHIFT)) |
             (RCC_CFGR_MCOPRE_DIV_4 << RCC_CFGR_MCO2PRE_SHIFT);
 }
-#endif /* DEBUG */
+#endif /* DEBUG_LEVEL >= DEBUG_MINIMAL */
 
 /*----------------------------- PUBLIC FUNCTIONS -----------------------------*/
 
@@ -70,8 +70,8 @@ void portClockInit(void) {
     /* Write Clock Configuration to RCC */
     rcc_clock_setup_hse(&rcc_config, HSE_FREQ/2000000);
 
-    #ifdef DEBUG
-    /* Map system clock to PC9 (MCO2 output) */
-    mco_setup();
-    #endif /* DEBUG */
+    #if DEBUG_LEVEL >= DEBUG_MINIMAL
+        /* Map system clock to PC9 (MCO2 output) */
+        mco_setup();
+    #endif /* DEBUG_LEVEL >= DEBUG_MINIMAL */
 }

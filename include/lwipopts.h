@@ -109,7 +109,7 @@
 
 
 /*------------------------------- Debugging ----------------------------------*/
-#ifdef DEBUG
+#if DEBUG_LEVEL >= DEBUG_FULL
     /** Use lwIP's built-in printf debugging */
     #define LWIP_DEBUG
     // #define MEMP_DEBUG      LWIP_DBG_ON
@@ -125,7 +125,7 @@
     /** Collect general run-time stats */
     // #define LWIP_STATS         1
     // #define LWIP_STATS_DISPLAY 1
-#endif /* DEBUG */
+#endif /* DEBUG_LEVEL >= DEBUG_FULL */
 
 
 /*----------------------------------------------------------------------------*/

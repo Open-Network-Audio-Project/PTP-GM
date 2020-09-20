@@ -47,10 +47,6 @@
     #include <libopencm3/ethernet/phy_ksz80x1.h>
 #endif /* PHY_KS8081 */
 
-#ifdef DEBUG
-#include <stdio.h> /// @todo Eventually can be removed, as LWIP handles debug
-#endif /* DEBUG */
-
 #if LWIP_PTP
     #define PTP_UPDATE_COARSE   0
     #define PTP_UPDATE_FINE     1
@@ -140,7 +136,7 @@ static err_t ptp_init(uint32_t mode) {
     if(mode == PTP_UPDATE_FINE) {
         /* Set addend based on SYSCLK frequency (see reference manual) */
         ETH_PTPTSAR = ADJ_FREQ_BASE_ADDEND;
-        printf("ADDEND: %lu\n", ETH_PTPTSAR);
+        // printf("ADDEND: %lu\n", ETH_PTPTSAR);
         
         /* Update addend, wait for bit to be cleared */
         ETH_PTPTSCR |= ETH_PTPTSCR_TTSARU;
@@ -423,8 +419,9 @@ static void ethernetif_input(void* argument)
         configASSERT(eth_task == NULL);
         eth_task = xTaskGetCurrentTaskHandle();
 
-        if(process_rx_descr(netif))
+        if(process_rx_descr(netif)) {
             LWIP_DEBUGF(NETIF_DEBUG, ("ethernetif_input: descriptor error!\n"));
+        }
 
         /** @todo if this task and the ISR get out of sync (under heavy load),
          * the DMA controller and the processing loop could get out of sync. 
@@ -464,6 +461,8 @@ static void ethernetif_phy(void* argument)
 
 static err_t ethernetif_output(struct netif *netif, struct pbuf *p)
 {
+    (void)(netif); // Unused variable
+
     /// @todo create transmit IRQ handler?
     struct pbuf *q;
 

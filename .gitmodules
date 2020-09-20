@@ -1,0 +1,3 @@
+[submodule "lib/FreeRTOS-Debug"]
+	path = lib/FreeRTOS-Debug
+	url = git@github.com:BOJIT/FreeRTOS-Debug.git

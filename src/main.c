@@ -5,18 +5,14 @@
  */
 
 #include <string.h>
-#ifdef DEBUG
-#include <stdio.h>
-#endif /* DEBUG */
 
 #include <lwip/api.h>
 
 /* Inclue FreeRTOS Headers */
-#include "FreeRTOS.h"
-#include "task.h"
+#include <FreeRTOS.h>
+#include <task.h>
 
-/* Include FreeRTOS Tasks and Config */
-// #include "FreeRTOSConfig.h"
+#include <FreeRTOS-Debug.h>
 
 /* Configuration includes */
 #include <globalConfig.h>
@@ -37,7 +33,7 @@ void vApplicationStackOverflowHook(
 }
 
 /* Task 1 - Blink System LED */
-void startTask1(void *args __attribute((unused))) {
+static void startTask1(void *args __attribute((unused))) {
 
     for (;;) {
         portSystemLEDToggle();
@@ -46,7 +42,7 @@ void startTask1(void *args __attribute((unused))) {
 }
 
 /* Task 2 - Blink Status LED */
-void startTask2(void *args __attribute((unused))) {
+static void startTask2(void *args __attribute((unused))) {
 
     for (;;) {
         portStatusLEDToggle();
@@ -55,34 +51,36 @@ void startTask2(void *args __attribute((unused))) {
 }
 
 /* Task 3 - Blink Warning LED */
-void startTask3(void *args __attribute((unused))) {
+// static void startTask3(void *args __attribute((unused))) {
 
-    portEthInit(); // Configure Ethernet GPIOs and registers
+//     debugFreeze();
 
-    // ptpd_init();    // Initialise PTPd Daemon (not final interface)
+//     portEthInit(); // Configure Ethernet GPIOs and registers
 
-    struct netconn *conn;
-    char msg[] = "alpha";
-    struct netbuf *buf;
-    char * data;
+//     // ptpd_init();    // Initialise PTPd Daemon (not final interface)
 
-    conn = netconn_new(NETCONN_UDP);
-    netconn_bind(conn, IP_ADDR_ANY, 1234); //local port
+//     struct netconn *conn;
+//     char msg[] = "alpha";
+//     struct netbuf *buf;
+//     char * data;
 
-    netconn_connect(conn, IP_ADDR_BROADCAST, 1235);
+//     conn = netconn_new(NETCONN_UDP);
+//     netconn_bind(conn, IP_ADDR_ANY, 1234); //local port
 
-    for (;;) {
-        portWarningLEDToggle();
-        buf = netbuf_new();
-        data =netbuf_alloc(buf, sizeof(msg)); // NOT THREAD SAFE!!!!!
-        memcpy(data, msg, sizeof(msg));
-        netconn_send(conn, buf);
-        netbuf_delete(buf); // De-allocate packet buffer
-        vTaskDelay(10000);
-	}
-}
+//     netconn_connect(conn, IP_ADDR_BROADCAST, 1235);
 
-/** 
+//     for (;;) {
+//         portWarningLEDToggle();
+//         buf = netbuf_new();
+//         data =netbuf_alloc(buf, sizeof(msg)); // NOT THREAD SAFE!!!!!
+//         memcpy(data, msg, sizeof(msg));
+//         netconn_send(conn, buf);
+//         netbuf_delete(buf); // De-allocate packet buffer
+//         vTaskDelay(10000);
+// 	}
+// }
+
+/**
  * @brief This is the main entry point to the program
 */
 int main(void) {
@@ -91,13 +89,13 @@ int main(void) {
 
     portLEDInit();   // Set onboard LED GPIOs as outputs
 
-    #ifdef DEBUG
-    portSerialInit(115200);   // Configure UART as output for debugging
-    #endif /* DEBUG */
+    #if DEBUG_LEVEL >= DEBUG_ERRORS
+        debug_ptr = debugInitialise(10, portSerialInitialise, portSerialSend);
+    #endif /* DEBUG_LEVEL >= DEBUG_FULL */
 
     xTaskCreate(startTask1, "task1", 350, NULL, 5, NULL);
     xTaskCreate(startTask2, "task2", 350, NULL, 5, NULL);
-    xTaskCreate(startTask3, "lwip", 1024, NULL, FREERTOS_PRIORITIES-3, NULL);
+    //xTaskCreate(startTask3, "lwip", 1024, NULL, FREERTOS_PRIORITIES-3, NULL);
 
     vTaskStartScheduler();
 

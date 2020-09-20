@@ -10,11 +10,6 @@
 #ifndef __GLOBAL_CONFIG__
 #define __GLOBAL_CONFIG__
 
-/*----------------------------- General Config -------------------------------*/
-
-/// Enables all system debugging features if defined
-#define DEBUG
-
 /*----------------------------- FreeRTOS Config ------------------------------*/
 
 #define FREERTOS_PRIORITIES     10  ///< Number of priorities that FreeRTOS uses

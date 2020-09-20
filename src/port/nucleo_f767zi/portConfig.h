@@ -36,13 +36,13 @@
 
 /*----------------------------------------------------------------------------*/
 
-#ifdef DEBUG
-/* Serial configuration */
-#define DEBUG_UART_PORT     GPIOD     ///< GPIO Port for UART Rx <b>AND</b> TX!
-#define DEBUG_UART_TX       GPIO8     ///< GPIO Pin for Tx Pin
-#define DEBUG_UART_RX       GPIO9     ///< GPIO Pin for Rx Pin
-#define DEBUG_UART_RCC      RCC_GPIOD ///< RCC (clock enable) for UART
-#endif /* DEBUG */
+#if DEBUG_LEVEL >= DEBUG_ERRORS
+    /* Serial configuration */
+    #define DEBUG_UART_PORT     GPIOD     ///< GPIO Port for UART Rx and Tx
+    #define DEBUG_UART_TX       GPIO8     ///< GPIO Pin for Tx Pin
+    #define DEBUG_UART_RX       GPIO9     ///< GPIO Pin for Rx Pin
+    #define DEBUG_UART_RCC      RCC_GPIOD ///< RCC (clock enable) for UART
+#endif /* DEBUG_LEVEL >= DEBUG_ERRORS */
 
 
 /*----------------------------------------------------------------------------*/
