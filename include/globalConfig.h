@@ -49,7 +49,7 @@
 
 #define LWIP_HOSTNAME       "lwip"  ///< Hostname of lwIP netif
 
-#define LWIP_PTP            0   ///< Modify lwIP to include PTP support in pbufs
+#define LWIP_PTP            1   ///< Modify lwIP to include PTP support in pbufs
 
 /** Enable lwIP core locking to allow non thread-safe functions to be called */
 #define LWIP_FREERTOS_CHECK_CORE_LOCKING        1

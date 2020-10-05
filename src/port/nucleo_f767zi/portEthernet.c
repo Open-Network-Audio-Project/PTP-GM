@@ -7,6 +7,9 @@
  * @date 7 June 2020
  */
 
+/* Port public interface */
+#include "port/portEthernet.h"
+
 /* lwIP Includes */
 #include <lwip/init.h>
 #include <lwip/netif.h>
@@ -36,9 +39,6 @@
 #include "task.h"
 #include "semphr.h"
 
-/* Port declarations and config */
-#include <port.h>
-
 /* Phy Register Includes */
 #ifdef PHY_LAN8742A
     #include <libopencm3/ethernet/phy_lan87xx.h>
@@ -50,14 +50,16 @@
 #if LWIP_PTP
     #define PTP_UPDATE_COARSE   0
     #define PTP_UPDATE_FINE     1
+
+    #include <ptpd-lwip.h>
 #endif /* LWIP_PTP */
 
-/** 
+/**
  * @brief Network interface struct for ethernet port
 */
 static struct netif ethernetif;
 
-/** 
+/**
  * @brief Generic union for conveniently extracting bytes from words
 */
 union word_byte {
@@ -67,7 +69,7 @@ union word_byte {
 
 /*-------------------- Static Global Variables (DMA) -------------------------------*/
 
-/** 
+/**
  * @brief Generic DMA Descriptor (see STM32Fxx7 Reference Manual)
 */
 struct dma_desc {
@@ -82,7 +84,7 @@ struct dma_desc {
     struct pbuf *pbuf;
 };
 
-/** 
+/**
  * @brief Transmit descriptor ring - adjust length from <b>port_config</b>
  * to tailor for your application
 */
@@ -92,7 +94,7 @@ struct dma_desc {
 static struct dma_desc tx_dma_desc[STIF_NUM_TX_DMA_DESC];
 static struct dma_desc *tx_cur_dma_desc;
 
-/** 
+/**
  * @brief Recieve descriptor ring - adjust length from <b>port_config</b>
  * to tailor for your application
 */
@@ -102,7 +104,7 @@ static struct dma_desc *tx_cur_dma_desc;
 static struct dma_desc rx_dma_desc[STIF_NUM_RX_DMA_DESC];
 static struct dma_desc *rx_cur_dma_desc;
 
-/** 
+/**
  * @brief Task handle for triggering packet reception with a FreeRTOS
  * direct task notification
 */
@@ -137,7 +139,7 @@ static err_t ptp_init(uint32_t mode) {
         /* Set addend based on SYSCLK frequency (see reference manual) */
         ETH_PTPTSAR = ADJ_FREQ_BASE_ADDEND;
         // printf("ADDEND: %lu\n", ETH_PTPTSAR);
-        
+
         /* Update addend, wait for bit to be cleared */
         ETH_PTPTSCR |= ETH_PTPTSCR_TTSARU;
         while(ETH_PTPTSCR & ETH_PTPTSCR_TTSARU);
@@ -161,38 +163,30 @@ static err_t ptp_init(uint32_t mode) {
     return ERR_OK;
 }
 
-void portPTPGetTime(struct ptptime_t * timestamp) {
-    timestamp->tv_sec = ETH_PTPTSHR;
+static void portPTPGetTime(ptpTime_t *timestamp) {
+    timestamp->tv_sec.lsb = ETH_PTPTSHR;
     timestamp->tv_nsec = PTP_TO_NSEC(ETH_PTPTSLR);
 }
 
-void portPTPSetTime(struct ptptime_t * timestamp) {
-    if((timestamp->tv_sec < 0) || (timestamp->tv_nsec < 0)) {
-        ETH_PTPTSLUR = ETH_PTPTSLUR_TSUPNS; // Set timestamp as negative
-    }
-    else {
-        ETH_PTPTSLUR = 0;   // Set timestamp as positive (default)
-    }
-
+static void portPTPSetTime(ptpTime_t *timestamp) {
     /* Write timestamps to registers */
-    ETH_PTPTSHUR = (u32_t)abs(timestamp->tv_sec);
-    ETH_PTPTSLUR |= (u32_t)(PTP_TO_SUBSEC(abs(timestamp->tv_nsec))
-                                                & ETH_PTPTSLUR_TSUSS);
+    ETH_PTPTSHUR = timestamp->tv_sec.lsb;
+    ETH_PTPTSLUR |= PTP_TO_SUBSEC(timestamp->tv_nsec) & ETH_PTPTSLUR_TSUSS;
 
     /* Reinitialise timestamping and wait for bit to be cleared */
     ETH_PTPTSCR |= ETH_PTPTSCR_TSSTI;
     while(ETH_PTPTSCR & ETH_PTPTSCR_TSSTI);
 }
 
-void portPTPUpdateCoarse(struct ptptime_t * timestamp) {
+static void portPTPUpdateCoarse(ptpTime_t *timestamp, s8_t sign) {
     /* Backup addend (coarse update clears it) */
     u32_t addend = ETH_PTPTSAR;
 
     /* Wait for timestamp flags to be cleared */
-    while(ETH_PTPTSCR & (ETH_PTPTSCR_TSSTI | ETH_PTPTSCR_TSSTU 
+    while(ETH_PTPTSCR & (ETH_PTPTSCR_TSSTI | ETH_PTPTSCR_TSSTU
                                             | ETH_PTPTSCR_TTSARU));
 
-    if((timestamp->tv_sec < 0) || (timestamp->tv_nsec < 0)) {
+    if(sign) {
         ETH_PTPTSLUR = ETH_PTPTSLUR_TSUPNS; // Set timestamp as negative
     }
     else {
@@ -200,9 +194,8 @@ void portPTPUpdateCoarse(struct ptptime_t * timestamp) {
     }
 
     /* Write timestamps to registers */
-    ETH_PTPTSHUR = (u32_t)abs(timestamp->tv_sec);
-    ETH_PTPTSLUR |= (u32_t)(PTP_TO_SUBSEC(abs(timestamp->tv_nsec))
-                                                & ETH_PTPTSLUR_TSUSS);
+    ETH_PTPTSHUR = timestamp->tv_sec.lsb;
+    ETH_PTPTSLUR |= PTP_TO_SUBSEC(timestamp->tv_nsec) & ETH_PTPTSLUR_TSUSS;
 
     /* Update timestamps */
     ETH_PTPTSCR |= ETH_PTPTSCR_TSSTU;
@@ -213,13 +206,13 @@ void portPTPUpdateCoarse(struct ptptime_t * timestamp) {
     ETH_PTPTSCR |= ETH_PTPTSCR_TTSARU;
 }
 
-void portPTPUpdateFine(int32_t adj) {
+static void portPTPUpdateFine(s32_t adj) {
     /* Limit maximum frequency adjustment */
     if( adj > 5120000) adj = 5120000;
     if( adj < -5120000) adj = -5120000;
 
     /* Addend estimation (from AN3411) */
-    u32_t addend = ((((275LL * adj)>>8) * 
+    u32_t addend = ((((275LL * adj)>>8) *
                     (ADJ_FREQ_BASE_ADDEND>>24))>>6) + (ADJ_FREQ_BASE_ADDEND);
 
     /* Update addend */
@@ -232,7 +225,7 @@ void portPTPUpdateFine(int32_t adj) {
 
 /*------------------------------ DMA Functions -------------------------------*/
 
-/** 
+/**
  * @brief Initialise the transmit descriptor ring with generic attributes
 */
 static void init_tx_dma_desc(void)
@@ -249,7 +242,7 @@ static void init_tx_dma_desc(void)
     tx_cur_dma_desc = &tx_dma_desc[0];
 }
 
-/** 
+/**
  * @brief Initialise the recieve descriptor ring with generic attributes
 */
 static void init_rx_dma_desc(void)
@@ -267,7 +260,7 @@ static void init_rx_dma_desc(void)
     rx_cur_dma_desc = &rx_dma_desc[0];
 }
 
-/** 
+/**
  * @brief Process Tx descriptor ready for packet transmission
  * This function is designed to work with pbuf chains, so unlike the
  * Rx descriptors which are strictly one pbuf per packet.
@@ -304,7 +297,7 @@ static void process_tx_descr(struct pbuf *p, int first, int last)
     tx_cur_dma_desc = tx_cur_dma_desc->Buffer2NextDescAddr;
 }
 
-/** 
+/**
  * @brief Process Rx descriptor, pass to lwIP, then allocate a new pbuf to the
  * descriptor
  * @param netif network interface struct
@@ -317,13 +310,13 @@ static int process_rx_descr(struct netif *netif)
 
     if(rx_cur_dma_desc->pbuf == NULL)
         return 1;   // No pbuf was allocated to this descriptor!
-    
-    if(!((ETH_RDES0_LS | ETH_RDES0_FS) == 
+
+    if(!((ETH_RDES0_LS | ETH_RDES0_FS) ==
                 (rx_cur_dma_desc->Status & (ETH_RDES0_LS | ETH_RDES0_FS))))
         return 1;   // In store and forward mode this should never trigger
 
 
-    int frame_length = (rx_cur_dma_desc->Status & ETH_RDES0_FL) 
+    int frame_length = (rx_cur_dma_desc->Status & ETH_RDES0_FL)
                                                 >> ETH_RDES0_FL_SHIFT;
 
     rx_cur_dma_desc->pbuf->tot_len = frame_length;
@@ -357,7 +350,7 @@ static int process_rx_descr(struct netif *netif)
 
 /*------------------------------- Phy Functions ------------------------------*/
 
-/** 
+/**
  * @brief gets phy autonegotiation status on link change - configures the MAC
  * accordingly
 */
@@ -370,7 +363,7 @@ static err_t phy_negotiate(void)
 
     #ifdef PHY_LAN8742A
         int status;
-        while(!((status=eth_smi_read(PHY_ADDRESS, LAN87XX_SCSR)) 
+        while(!((status=eth_smi_read(PHY_ADDRESS, LAN87XX_SCSR))
                 & LAN87XX_SCSR_AUTODONE));  // Wait for autonegotiation to finish
         switch(status & LAN87XX_SCSR_SPEED) {
             case LAN87XX_SCSR_SPEED_10HD:
@@ -400,7 +393,7 @@ static err_t phy_negotiate(void)
 
 /*------------------------------- FreeRTOS Tasks -----------------------------*/
 
-/** 
+/**
  * @brief Task for handling incoming ethernet packets (triggered by ISR)
  * @param argument = <i>netif</i> struct from lwIP
 */
@@ -411,7 +404,7 @@ static void ethernetif_input(void* argument)
     /* Block the task before running for the first time */
     configASSERT(eth_task == NULL);
     eth_task = xTaskGetCurrentTaskHandle();
-    
+
     for(;;) {
         ulTaskNotifyTake(pdFALSE, portMAX_DELAY); // Block until ISR releases
 
@@ -424,13 +417,13 @@ static void ethernetif_input(void* argument)
         }
 
         /** @todo if this task and the ISR get out of sync (under heavy load),
-         * the DMA controller and the processing loop could get out of sync. 
+         * the DMA controller and the processing loop could get out of sync.
          * Ideally implement support for 'catch-up'/'overflow' handling.
         */
     }
 }
 
-/** 
+/**
  * @brief Polls the phy every 0.5 seconds to check the status
  * @param argument = <i>netif</i> struct from lwIP
  * The phy hardware interrupt is not available if the phy is providing the
@@ -483,7 +476,7 @@ static err_t ethernetif_output(struct netif *netif, struct pbuf *p)
     return ERR_OK;
 }
 
-/** 
+/**
  * @brief Initialises the ethernet peripheral's registers for use with the
  * provided descriptors
  * @retval lwIP-style error status
@@ -518,7 +511,7 @@ static err_t mac_init(void)
     return ERR_OK;
 }
 
-/** 
+/**
  * @brief Initialise the <i>netif</i> struct with the relevant operational
  * settings
  * @param netif network interface struct
@@ -582,7 +575,7 @@ static err_t net_init(struct netif *netif)
     return ERR_OK;
 }
 
-/** 
+/**
  * @brief Callback for initialising the ethernet interface
  * @param netif network interface struct
  * @retval lwIP-style error status
@@ -612,7 +605,7 @@ static err_t ethernetif_init(struct netif *netif)
 
     /* FreeRTOS task initiation */
     xTaskCreate(ethernetif_phy, "ETH_phy", 350, netif, 2, NULL);
-    xTaskCreate(ethernetif_input, "ETH_input", 1024, netif, 
+    xTaskCreate(ethernetif_input, "ETH_input", 1024, netif,
                                   configMAX_PRIORITIES-1, NULL);
 
     /* Enable MAC and DMA transmission and reception */
@@ -621,7 +614,7 @@ static err_t ethernetif_init(struct netif *netif)
     return ERR_OK;
 }
 
-/** 
+/**
  * @brief Initialise MCU hardware for use of the ethernet peripheral
 */
 static void eth_hw_init(void)
@@ -637,7 +630,7 @@ static void eth_hw_init(void)
     rcc_periph_clock_enable(RCC_GPIOG);
 
     /// @todo Have not initialised PPS pin for debug!
-    
+
 
     /* Configure ethernet GPIOs */
     /* GPIOA */
@@ -684,7 +677,7 @@ static void eth_hw_init(void)
 
 /*---------------------------- CALLBACK FUNCTIONS ----------------------------*/
 
-/** 
+/**
  * @brief Callback on ethernet status changes (set up/down or address change)
  * @param netif network interface struct
 */
@@ -693,7 +686,7 @@ static void ethernetif_status_callback(struct netif *netif)
     if(netif_is_up(netif)) {} else {}   // Use later if required
 }
 
-/** 
+/**
  * @brief Callback on ethernet link change - restarts network services and phy
  * configuration
  * @param netif network interface struct
@@ -733,7 +726,7 @@ void portEthInit(void)
 {
     /* Hardware (MSP) Configuration */
     eth_hw_init();
-    
+
     tcpip_init(NULL, NULL);
 
     /* IP Configuration */
@@ -743,14 +736,14 @@ void portEthInit(void)
     #if !LWIP_DHCP
         IP4_ADDR(&ip_addr, LWIP_IP_0, LWIP_IP_1, LWIP_IP_2, LWIP_IP_3);
         IP4_ADDR(&net_mask, LWIP_NM_0, LWIP_NM_1, LWIP_NM_2, LWIP_NM_3);
-        IP4_ADDR(&gw_addr, LWIP_GW_0, LWIP_GW_1, LWIP_GW_2, LWIP_GW_3);  
+        IP4_ADDR(&gw_addr, LWIP_GW_0, LWIP_GW_1, LWIP_GW_2, LWIP_GW_3);
     #endif /* !LWIP_DHCP */
 
     LOCK_TCPIP_CORE();  // Lock lwIP core while configuring
 
     /* Add ethernet interface (currently only one interface supported) */
     netif_add(&ethernetif, &ip_addr, &net_mask, &gw_addr, NULL,
-                       ethernetif_init, tcpip_input); 
+                       ethernetif_init, tcpip_input);
     netif_set_default(&ethernetif);
 
     /* Set callbacks for link events (restarting when cable is unplugged) */
@@ -774,7 +767,7 @@ void portEthInit(void)
 //     for(;;);
 // }
 
-/** 
+/**
  * @brief Hardware ethernet interrupt (see reference manual for details)
 */
 void eth_isr(void)

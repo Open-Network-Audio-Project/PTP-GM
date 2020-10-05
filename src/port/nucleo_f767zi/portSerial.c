@@ -8,6 +8,10 @@
  * @date 7 June 2020
  */
 
+
+/* Port public interface */
+#include "port/portSerial.h"
+
 #if DEBUG_LEVEL >= DEBUG_ERRORS
     #include <stdio.h>
 #endif /* DEBUG_LEVEL >= DEBUG_ERRORS */
@@ -22,8 +26,8 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-/* Port declarations and config */
-#include <port.h>
+/** @brief Task Handle of debug task - required for ISR task notification */
+TaskHandle_t* debug_ptr;
 
 /*----------------------------- PUBLIC FUNCTIONS -----------------------------*/
 
@@ -49,33 +53,28 @@
         usart_set_parity(USART3, USART_PARITY_NONE);
         usart_set_flow_control(USART3, USART_FLOWCONTROL_NONE);
 
-        /* Enable interrupt for USART3 */
-        nvic_set_priority(NVIC_USART3_IRQ, 1);
-        nvic_enable_irq(NVIC_USART3_IRQ);
-
-        usart_enable_tx_interrupt(USART3);
-
         /* Finally enable the USART. */
         usart_enable(USART3);
     }
 
     /**
-     * @brief Sends a single character to the UART in a non-blocking manner.
-     * A user-defined ISR is used to unblock the task that calls this function.
+     * @brief Sends a single character to the UART in a blocking manner.
+     * The UART transmission is blocking to simplify implementation, but this
+     * means that the debug task must be the lowest priority.
      * @param character character to send to UART.
     */
     void portSerialSend(char character)
     {
-        usart_send(USART3, (uint16_t)character);
+        usart_send_blocking(USART3, (uint16_t)character);
     }
 #endif /* DEBUG_LEVEL >= DEBUG_ERRORS */
 
 
 #if DEBUG_LEVEL >= DEBUG_FULL
     /**
-     * @brief Overrides the <b>newlib</b> "_write" function that is used by 
+     * @brief Overrides the <b>newlib</b> "_write" function that is used by
      * <b>printf()</b>.
-     * Note that this function is only required for using LWIP's built-in 
+     * Note that this function is only required for using LWIP's built-in
      * debugging, which is only used at full debugging level.
      * @param fd file descriptor - handled by <b>newlib</b>
      * @param ptr pointer to char array - handled by <b>newlib</b>
@@ -97,23 +96,3 @@
         return -1;
     }
 #endif /* DEBUG_LEVEL >= DEBUG_FULL */
-
-/*-------------------------------- SERIAL ISR --------------------------------*/
-
-#if DEBUG_LEVEL >= DEBUG_ERRORS
-    /** 
-     * @brief Hardware USART interrupt (see reference manual for details)
-    */
-    void usart3_isr(void)
-    {
-        BaseType_t task_yield = pdFALSE;
-        if(usart_get_flag(USART3, USART_ISR_TXE)) {
-            /* Unblock Debug Task */
-            vTaskNotifyGiveFromISR(*debug_ptr, &task_yield);
-            *debug_ptr = NULL;
-            portYIELD_FROM_ISR(task_yield);
-            USART3_ICR = USART_ICR_TCCF;    // Clear TXE interrupt
-        }
-        // No other interrupts are currently registered
-    }
-#endif /* DEBUG_LEVEL >= DEBUG_ERRORS */

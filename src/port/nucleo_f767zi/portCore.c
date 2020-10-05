@@ -12,13 +12,14 @@
  * @date 7 June 2020
  */
 
+/* Port public interface */
+#include "port/portCore.h"
+
 /* Libopencm3 includes */
+#include <libopencm3/cm3/nvic.h>
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/flash.h>
-
-/* Port declarations and config */
-#include <port.h>
 
 /*---------------------------- PRIVATE FUNCTIONS -----------------------------*/
 
@@ -74,4 +75,11 @@ void portClockInit(void) {
         /* Map system clock to PC9 (MCO2 output) */
         mco_setup();
     #endif /* DEBUG_LEVEL >= DEBUG_MINIMAL */
+}
+
+/**
+ * @brief Reset entire system
+ */
+void portSystemReset(void) {
+    reset_handler();
 }

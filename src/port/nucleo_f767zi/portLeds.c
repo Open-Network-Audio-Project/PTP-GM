@@ -7,12 +7,12 @@
  * @date 7 June 2020
  */
 
+/* Port public interface */
+#include "port/portLeds.h"
+
 /* Libopencm3 includes */
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
-
-/* Port declarations and config */
-#include <port.h>
 
 /*----------------------------- PUBLIC FUNCTIONS -----------------------------*/
 

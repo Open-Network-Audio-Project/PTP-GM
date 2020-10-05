@@ -1,6 +1,7 @@
 /**
  * @file
- * @brief Port-specific application configuration
+ * @brief Port-specific application configuration (put things here that may
+ * be required by non-driver code).
  * 
  * @author @htmlonly &copy; @endhtmlonly 2020 James Bennion-Pedley
  *
