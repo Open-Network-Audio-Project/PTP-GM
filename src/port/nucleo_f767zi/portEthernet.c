@@ -38,6 +38,8 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
+/// @todo if performance allows, only use RTOS functions that
+/// are exposed through the lwIP sys.h header file.
 
 /* Phy Register Includes */
 #ifdef PHY_LAN8742A
@@ -82,7 +84,7 @@ struct dma_desc {
     uint32_t   TimeStampLow;
     uint32_t   TimeStampHigh;
     struct pbuf *pbuf;
-};
+}; //__attribute__((packed));
 
 /**
  * @brief Transmit descriptor ring - adjust length from <b>port_config</b>
@@ -123,7 +125,7 @@ static TaskHandle_t eth_task = NULL;
 #define PTP_TO_SUBSEC(NSEC)     (u32_t)((uint64_t)(NSEC * 0x80000000ll) \
                                                             / 1000000000)
 
-static err_t ptp_init(uint32_t mode) {
+static err_t ptp_hw_init(s8_t mode) {
     /* Disable timestamp interrupt */
     ETH_MACIMR |= ETH_MACIMR_TSTIM;
 
@@ -163,22 +165,22 @@ static err_t ptp_init(uint32_t mode) {
     return ERR_OK;
 }
 
-static void portPTPGetTime(ptpTime_t *timestamp) {
-    timestamp->tv_sec.lsb = ETH_PTPTSHR;
-    timestamp->tv_nsec = PTP_TO_NSEC(ETH_PTPTSLR);
+static void ptp_get_time(timestamp_t *timestamp) {
+    timestamp->secondsField.lsb = ETH_PTPTSHR;
+    timestamp->nanosecondsField = PTP_TO_NSEC(ETH_PTPTSLR);
 }
 
-static void portPTPSetTime(ptpTime_t *timestamp) {
+static void ptp_set_time(const timestamp_t *timestamp) {
     /* Write timestamps to registers */
-    ETH_PTPTSHUR = timestamp->tv_sec.lsb;
-    ETH_PTPTSLUR |= PTP_TO_SUBSEC(timestamp->tv_nsec) & ETH_PTPTSLUR_TSUSS;
+    ETH_PTPTSHUR = timestamp->secondsField.lsb;
+    ETH_PTPTSLUR |= PTP_TO_SUBSEC(timestamp->nanosecondsField) & ETH_PTPTSLUR_TSUSS;
 
     /* Reinitialise timestamping and wait for bit to be cleared */
     ETH_PTPTSCR |= ETH_PTPTSCR_TSSTI;
     while(ETH_PTPTSCR & ETH_PTPTSCR_TSSTI);
 }
 
-static void portPTPUpdateCoarse(ptpTime_t *timestamp, s8_t sign) {
+static void ptp_update_coarse(const timestamp_t *timestamp, s8_t sign) {
     /* Backup addend (coarse update clears it) */
     u32_t addend = ETH_PTPTSAR;
 
@@ -194,8 +196,8 @@ static void portPTPUpdateCoarse(ptpTime_t *timestamp, s8_t sign) {
     }
 
     /* Write timestamps to registers */
-    ETH_PTPTSHUR = timestamp->tv_sec.lsb;
-    ETH_PTPTSLUR |= PTP_TO_SUBSEC(timestamp->tv_nsec) & ETH_PTPTSLUR_TSUSS;
+    ETH_PTPTSHUR = timestamp->secondsField.lsb;
+    ETH_PTPTSLUR |= PTP_TO_SUBSEC(timestamp->nanosecondsField) & ETH_PTPTSLUR_TSUSS;
 
     /* Update timestamps */
     ETH_PTPTSCR |= ETH_PTPTSCR_TSSTU;
@@ -206,7 +208,7 @@ static void portPTPUpdateCoarse(ptpTime_t *timestamp, s8_t sign) {
     ETH_PTPTSCR |= ETH_PTPTSCR_TTSARU;
 }
 
-static void portPTPUpdateFine(s32_t adj) {
+static void ptp_update_fine(s32_t adj) {
     /* Limit maximum frequency adjustment */
     if( adj > 5120000) adj = 5120000;
     if( adj < -5120000) adj = -5120000;
@@ -323,6 +325,12 @@ static int process_rx_descr(struct netif *netif)
     rx_cur_dma_desc->pbuf->len = frame_length;
 
     /// @todo check frame validity + frame length +/- CRC?
+
+    /* Copy PTP timestamps to pbuf */
+    #if LWIP_PTP
+        rx_cur_dma_desc->pbuf->tv_sec = rx_cur_dma_desc->TimeStampHigh;
+        rx_cur_dma_desc->pbuf->tv_nsec = rx_cur_dma_desc->TimeStampLow;
+    #endif /* LWIP_PTP */
 
     /* Pass packet to lwIP */
     if (netif->input(rx_cur_dma_desc->pbuf, netif) != ERR_OK) {
@@ -506,7 +514,8 @@ static err_t mac_init(void)
                    ETH_DMAOMR_TSF | ETH_DMAOMR_OSF);
 
     // Configure interrupts on reception only (PTP may change this later)
-    ETH_DMAIER = ETH_DMAIER_RIE | ETH_DMAIER_RBUIE | ETH_DMAIER_NISE;
+    ETH_DMAIER = ETH_DMAIER_RIE | ETH_DMAIER_TIE | ETH_DMAIER_NISE;
+    //ETH_DMAIER = ETH_DMAIER_NISE;
 
     return ERR_OK;
 }
@@ -565,10 +574,10 @@ static err_t net_init(struct netif *netif)
     netif->mtu = 1500;
     netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP;
 
-    // #if LWIP_IGMP
-    // netif->flags |= NETIF_FLAG_IGMP;
+    #if LWIP_IGMP
+        netif->flags |= NETIF_FLAG_IGMP;
     // netif_set_igmp_mac_filter(netif, mac_filter); // LATER
-    // #endif
+    #endif
 
     /// @todo this is where hardware Multicast filtering needs to be implemented
 
@@ -594,8 +603,19 @@ static err_t ethernetif_init(struct netif *netif)
 
     #if LWIP_PTP
         /* Enable PTP Timestamping */
-        if ((ret = ptp_init(PTP_UPDATE_FINE)) != ERR_OK)
+        if ((ret = ptp_hw_init(PTP_UPDATE_FINE)) != ERR_OK)
         return ret;
+
+        /* Pass PTP device drivers as fptrs to ptpd-lwIP */
+        ptpFunctions_t ptp_functions;
+        ptp_functions.ptpGetTime = ptp_get_time;
+        ptp_functions.ptpSetTime = ptp_set_time;
+        ptp_functions.ptpUpdateCoarse = ptp_update_coarse;
+        ptp_functions.ptpUpdateFine = ptp_update_fine;
+
+        /* Initialise ptpd-lwip */
+        ptpdInit(&ptp_functions, FREERTOS_PRIORITIES - 5);
+        /// @todo may need to be moved
     #endif /* LWIP_PTP */
 
 
@@ -673,6 +693,11 @@ static void eth_hw_init(void)
     /* NVIC Interrupt Configuration */
     nvic_set_priority(NVIC_ETH_IRQ, 5);
     nvic_enable_irq(NVIC_ETH_IRQ);
+
+    #if LWIP_PTP
+        /* PTP-Specific Hardware Initialisation */
+        ptp_hw_init(PTP_UPDATE_FINE);
+    #endif /* LWIP_PTP */
 }
 
 /*---------------------------- CALLBACK FUNCTIONS ----------------------------*/
@@ -760,13 +785,6 @@ void portEthInit(void)
 
 /*------------------------------- ETHERNET ISR -------------------------------*/
 
-// static void gdb_break() // THIS FUNCTION WILL GO EVENTUALLY
-// {
-//     // empty - convenient tag for GDB
-//     printf("ERROR\n");
-//     for(;;);
-// }
-
 /**
  * @brief Hardware ethernet interrupt (see reference manual for details)
 */
@@ -781,8 +799,11 @@ void eth_isr(void)
 
         ETH_DMASR = ETH_DMASR_RS;
     }
+    else if((ETH_DMASR & ETH_DMASR_TS) == ETH_DMASR_TS) {
+        //printf("hello!");
+    }
     else {  // Error Condition
         // gdb_break();    /// @todo implement separate transmission callbacks
     }
-    ETH_DMASR = ETH_DMAIER_NISE; // Clear Normal Interrupt Summary
+    ETH_DMASR = ETH_DMASR_NIS; // Clear Normal Interrupt Summary
 }

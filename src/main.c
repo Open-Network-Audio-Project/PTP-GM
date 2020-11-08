@@ -26,9 +26,6 @@
 
 #include <stdio.h>
 
-
-// #include "ptpd.h" /// @todo Improve ptpd public interface
-
 /* Stack Overflow Handler - move elsewhere */
 extern void vApplicationStackOverflowHook(
     xTaskHandle *pxTask,
@@ -55,8 +52,8 @@ static void startTask2(void *args __attribute((unused))) {
 
     for (;;) {
         portStatusLEDToggle();
-        DEBUG_MESSAGE(DEBUG_TYPE_INFO, "Hi World!!!");
-        vTaskDelay(2000);
+        // DEBUG_MESSAGE(DEBUG_TYPE_INFO, "Hi World!!!");
+        vTaskDelay(20000);
     }
 }
 
@@ -70,20 +67,23 @@ static void startTask3(void *args __attribute((unused))) {
     struct netbuf *buf;
     char * data;
 
-    conn = netconn_new(NETCONN_UDP);
-    netconn_bind(conn, IP_ADDR_ANY, 1234); //local port
+    ip_addr_t dest;
+    dest.addr = htonl(0xc0a82a02); // 192.168.42.2
 
-    netconn_connect(conn, IP_ADDR_BROADCAST, 1235);
+    conn = netconn_new(NETCONN_UDP);
+    netconn_bind(conn, IP_ADDR_ANY, 80); //local port
+
+    netconn_connect(conn, IP_ADDR_BROADCAST, 8080);
 
     for (;;) {
         portWarningLEDToggle();
         buf = netbuf_new();
-        data =netbuf_alloc(buf, sizeof(msg)); // NOT THREAD SAFE!!!!!
+        data = netbuf_alloc(buf, sizeof(msg));
         memcpy(data, msg, sizeof(msg));
         netconn_send(conn, buf);
         netbuf_delete(buf); // De-allocate packet buffer
         vTaskDelay(10000);
-	}
+    }
 }
 
 /**
@@ -101,7 +101,7 @@ int main(void) {
 
     xTaskCreate(startTask1, "task1", 350, NULL, 5, NULL);
     xTaskCreate(startTask2, "task2", 350, NULL, 5, NULL);
-    xTaskCreate(startTask3, "lwip", 1024, NULL, FREERTOS_PRIORITIES-3, NULL);
+    xTaskCreate(startTask3, "network", 1024, NULL, FREERTOS_PRIORITIES-3, NULL);
 
     vTaskStartScheduler();
 

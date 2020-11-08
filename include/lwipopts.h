@@ -101,12 +101,9 @@
 /*-------------------------- Non-lwIP Applications ---------------------------*/
 
 #if LWIP_PTP
-    #include <ptpd-lwip.h>
-
-    #define LWIP_PBUF_CUSTOM_DATA   ptpTime_t timestamp;
-                    // s32_t time_sec;
-                    // s32_t time_nsec;    ///< Add timestamp fields to pbuf
-    /// @todo use extern from ptpd.h?
+    #define LWIP_PBUF_CUSTOM_DATA \
+                    u32_t tv_sec; \
+                    u32_t tv_nsec;    ///< Add timestamp fields to pbuf
 #endif /* LWIP_PTP */
 
 
@@ -121,6 +118,8 @@
     // #define IP_DEBUG        LWIP_DBG_ON
     // #define DHCP_DEBUG      LWIP_DBG_ON
     #define NETIF_DEBUG     LWIP_DBG_ON
+    // #define API_LIB_DEBUG   LWIP_DBG_ON
+    // #define API_MSG_DEBUG   LWIP_DBG_ON
     // #define RAW_DEBUG       LWIP_DBG_ON
     // #define SYS_DEBUG       LWIP_DBG_ON
 
