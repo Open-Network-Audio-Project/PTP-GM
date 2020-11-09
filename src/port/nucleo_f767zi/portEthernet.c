@@ -9,6 +9,7 @@
 
 /* Port public interface */
 #include "port/portEthernet.h"
+#include "port/portLeds.h" /// @todo TEMPORARY!
 
 /* lwIP Includes */
 #include <lwip/init.h>
@@ -273,10 +274,10 @@ static void init_rx_dma_desc(void)
 static void process_tx_descr(struct pbuf *p, int first, int last)
 {
     // wait until the packet is freed by the DMA
-    while (tx_cur_dma_desc->Status & ETH_TDES0_OWN);
+    while(tx_cur_dma_desc->Status & ETH_TDES0_OWN);
 
     // discard old pbuf pointer (in chain)
-    if (tx_cur_dma_desc->pbuf != NULL)
+    if(tx_cur_dma_desc->pbuf != NULL)
         pbuf_free(tx_cur_dma_desc->pbuf);
 
     // the pbuf field of the descriptor is not used by the DMA
@@ -285,9 +286,16 @@ static void process_tx_descr(struct pbuf *p, int first, int last)
 
     // tag first and last frames
     tx_cur_dma_desc->Status &= ~(ETH_TDES0_FS | ETH_TDES0_LS);
-    if (first)
+    if(first)
         tx_cur_dma_desc->Status |= ETH_TDES0_FS;
-    if (last)
+        #if LWIP_PTP
+            // Flag packet to raise interrupt and record timestamp
+            // if((p->tv_nsec & p->tv_sec == UINT32_MAX)) {
+                tx_cur_dma_desc->Status |= ETH_TDES0_IC;
+                tx_cur_dma_desc->Status |= ETH_TDES0_TTSE;
+            // }
+        #endif /* LWIP_PTP */
+    if(last)
         tx_cur_dma_desc->Status |= ETH_TDES0_LS;
 
     tx_cur_dma_desc->Buffer1Addr = p->payload;
@@ -514,8 +522,9 @@ static err_t mac_init(void)
                    ETH_DMAOMR_TSF | ETH_DMAOMR_OSF);
 
     // Configure interrupts on reception only (PTP may change this later)
-    ETH_DMAIER = ETH_DMAIER_RIE | ETH_DMAIER_TIE | ETH_DMAIER_NISE;
-    //ETH_DMAIER = ETH_DMAIER_NISE;
+    //ETH_DMAIER = ETH_DMAIER_TBUIE | ETH_DMAIER_TIE | ETH_DMAIER_TPSIE | ETH_DMAIER_RIE |
+    //            ETH_DMAIER_TUIE | ETH_DMAIER_NISE | ETH_DMAIER_AISE;
+    ETH_DMAIER = ETH_DMAIER_TIE | ETH_DMAIER_RIE | ETH_DMAIER_NISE;
 
     return ERR_OK;
 }
@@ -799,11 +808,8 @@ void eth_isr(void)
 
         ETH_DMASR = ETH_DMASR_RS;
     }
-    else if((ETH_DMASR & ETH_DMASR_TS) == ETH_DMASR_TS) {
-        //printf("hello!");
-    }
-    else {  // Error Condition
-        // gdb_break();    /// @todo implement separate transmission callbacks
+    if((ETH_DMASR & ETH_DMASR_TS) == ETH_DMASR_TS) {    // Packet Transmitted
+        ETH_DMASR = ETH_DMASR_TS;
     }
     ETH_DMASR = ETH_DMASR_NIS; // Clear Normal Interrupt Summary
 }

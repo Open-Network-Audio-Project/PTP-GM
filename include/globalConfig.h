@@ -33,8 +33,8 @@
 #if !LWIP_DHCP
     #define LWIP_IP_0   192
     #define LWIP_IP_1   168
-    #define LWIP_IP_2   50
-    #define LWIP_IP_3   51
+    #define LWIP_IP_2   42
+    #define LWIP_IP_3   42
 
     #define LWIP_NM_0   255
     #define LWIP_NM_1   255
@@ -43,7 +43,7 @@
 
     #define LWIP_GW_0   192
     #define LWIP_GW_1   168
-    #define LWIP_GW_2   50
+    #define LWIP_GW_2   42
     #define LWIP_GW_3   1
 #endif /* !LWIP_DHCP */
 

@@ -82,7 +82,7 @@ static void startTask3(void *args __attribute((unused))) {
         memcpy(data, msg, sizeof(msg));
         netconn_send(conn, buf);
         netbuf_delete(buf); // De-allocate packet buffer
-        vTaskDelay(10000);
+        vTaskDelay(1000);
     }
 }
 
@@ -100,7 +100,7 @@ int main(void) {
     #endif /* DEBUG_LEVEL >= DEBUG_FULL */
 
     xTaskCreate(startTask1, "task1", 350, NULL, 5, NULL);
-    xTaskCreate(startTask2, "task2", 350, NULL, 5, NULL);
+    //xTaskCreate(startTask2, "task2", 350, NULL, 5, NULL);
     xTaskCreate(startTask3, "network", 1024, NULL, FREERTOS_PRIORITIES-3, NULL);
 
     vTaskStartScheduler();
