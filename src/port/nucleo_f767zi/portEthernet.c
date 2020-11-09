@@ -59,12 +59,12 @@
 
 /**
  * @brief Network interface struct for ethernet port
-*/
+ */
 static struct netif ethernetif;
 
 /**
  * @brief Generic union for conveniently extracting bytes from words
-*/
+ */
 union word_byte {
     u32_t word;
     u8_t byte[4];
@@ -74,7 +74,7 @@ union word_byte {
 
 /**
  * @brief Generic DMA Descriptor (see STM32Fxx7 Reference Manual)
-*/
+ */
 struct dma_desc {
     volatile uint32_t   Status;
     uint32_t   ControlBufferSize; // in actuality only first 12 bytes are size
@@ -90,7 +90,7 @@ struct dma_desc {
 /**
  * @brief Transmit descriptor ring - adjust length from <b>port_config</b>
  * to tailor for your application
-*/
+ */
 #ifndef STIF_NUM_TX_DMA_DESC
     #define STIF_NUM_TX_DMA_DESC 10
 #endif /* STIF_NUM_TX_DMA_DESC */
@@ -100,7 +100,7 @@ static struct dma_desc *tx_cur_dma_desc;
 /**
  * @brief Recieve descriptor ring - adjust length from <b>port_config</b>
  * to tailor for your application
-*/
+ */
 #ifndef STIF_NUM_RX_DMA_DESC
     #define STIF_NUM_RX_DMA_DESC 10
 #endif /* STIF_NUM_RX_DMA_DESC */
@@ -110,8 +110,24 @@ static struct dma_desc *rx_cur_dma_desc;
 /**
  * @brief Task handle for triggering packet reception with a FreeRTOS
  * direct task notification
-*/
+ */
 static TaskHandle_t eth_task = NULL;
+
+#if LWIP_PTP
+
+/**
+ * @brief Semaphore for notifying PTP stack when a transmitted packet has
+ * a valid timestamp.
+ */
+static sys_sem_t ptp_tx_notify;
+
+/**
+ * @brief Pointer to DMA descriptor that contains the timestamp data that
+ * is being queried.
+ */
+static struct dma_desc *tx_ptp_dma_desc;
+
+#endif /* LWIP_PTP */
 
 /*------------------------------ PTP FUNCTIONS -------------------------------*/
 
@@ -290,10 +306,14 @@ static void process_tx_descr(struct pbuf *p, int first, int last)
         tx_cur_dma_desc->Status |= ETH_TDES0_FS;
         #if LWIP_PTP
             // Flag packet to raise interrupt and record timestamp
-            // if((p->tv_nsec & p->tv_sec == UINT32_MAX)) {
+            if((p->tv_nsec & p->tv_sec == UINT32_MAX)) {
                 tx_cur_dma_desc->Status |= ETH_TDES0_IC;
                 tx_cur_dma_desc->Status |= ETH_TDES0_TTSE;
-            // }
+                tx_ptp_dma_desc = tx_cur_dma_desc;
+            }
+            else {
+                tx_cur_dma_desc->Status &= ~ETH_TDES0_IC;
+            }
         #endif /* LWIP_PTP */
     if(last)
         tx_cur_dma_desc->Status |= ETH_TDES0_LS;
@@ -484,10 +504,6 @@ static err_t ethernetif_output(struct netif *netif, struct pbuf *p)
         ETH_DMASR = ETH_DMASR_TBUS; // acknowledge
         ETH_DMATPDR = 0; // ask DMA to carry on polling
     }
-    /// @todo the step above is not required if the DMA hasn't got through the
-    /// previous descriptors before the next packet is sent. potentially this
-    /// behaviour should be flagged, as currently nothing is stopping descriptor
-    /// overflow.
 
     return ERR_OK;
 }
@@ -521,9 +537,6 @@ static err_t mac_init(void)
     ETH_DMAOMR = (ETH_DMAOMR_DTCEFD | ETH_DMAOMR_RSF |
                    ETH_DMAOMR_TSF | ETH_DMAOMR_OSF);
 
-    // Configure interrupts on reception only (PTP may change this later)
-    //ETH_DMAIER = ETH_DMAIER_TBUIE | ETH_DMAIER_TIE | ETH_DMAIER_TPSIE | ETH_DMAIER_RIE |
-    //            ETH_DMAIER_TUIE | ETH_DMAIER_NISE | ETH_DMAIER_AISE;
     ETH_DMAIER = ETH_DMAIER_TIE | ETH_DMAIER_RIE | ETH_DMAIER_NISE;
 
     return ERR_OK;
@@ -613,7 +626,7 @@ static err_t ethernetif_init(struct netif *netif)
     #if LWIP_PTP
         /* Enable PTP Timestamping */
         if ((ret = ptp_hw_init(PTP_UPDATE_FINE)) != ERR_OK)
-        return ret;
+            return ret;
 
         /* Pass PTP device drivers as fptrs to ptpd-lwIP */
         ptpFunctions_t ptp_functions;
@@ -621,6 +634,11 @@ static err_t ethernetif_init(struct netif *netif)
         ptp_functions.ptpSetTime = ptp_set_time;
         ptp_functions.ptpUpdateCoarse = ptp_update_coarse;
         ptp_functions.ptpUpdateFine = ptp_update_fine;
+
+        /* Create PTP Tx Timestamp Semaphore */
+        if ((ret = sys_sem_new(&ptp_tx_notify, 1)) != ERR_OK)
+            return ret;
+        ptp_functions.ptpTxNotify = &ptp_tx_notify;
 
         /* Initialise ptpd-lwip */
         ptpdInit(&ptp_functions, FREERTOS_PRIORITIES - 5);
@@ -809,6 +827,15 @@ void eth_isr(void)
         ETH_DMASR = ETH_DMASR_RS;
     }
     if((ETH_DMASR & ETH_DMASR_TS) == ETH_DMASR_TS) {    // Packet Transmitted
+        #if LWIP_PTP
+        // Copy timestamp from descriptor to pbuf
+        tx_ptp_dma_desc->pbuf->tv_sec = tx_ptp_dma_desc->TimeStampHigh;
+        tx_ptp_dma_desc->pbuf->tv_nsec = tx_ptp_dma_desc->TimeStampLow;
+
+        // Notify PTP stack using semaphore (optional)
+        sys_sem_signal(&ptp_tx_notify);
+        #endif /* LWIP_PTP */
+
         ETH_DMASR = ETH_DMASR_TS;
     }
     ETH_DMASR = ETH_DMASR_NIS; // Clear Normal Interrupt Summary
