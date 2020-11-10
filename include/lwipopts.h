@@ -113,7 +113,7 @@
     #define LWIP_DEBUG
     // #define MEMP_DEBUG      LWIP_DBG_ON
     // #define PBUF_DEBUG      LWIP_DBG_ON
-    // #define IGMP_DEBUG      LWIP_DBG_ON
+    #define IGMP_DEBUG      LWIP_DBG_ON
     // #define TCPIP_DEBUG     LWIP_DBG_ON
     // #define IP_DEBUG        LWIP_DBG_ON
     // #define DHCP_DEBUG      LWIP_DBG_ON

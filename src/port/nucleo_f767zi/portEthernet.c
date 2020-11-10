@@ -306,7 +306,7 @@ static void process_tx_descr(struct pbuf *p, int first, int last)
         tx_cur_dma_desc->Status |= ETH_TDES0_FS;
         #if LWIP_PTP
             // Flag packet to raise interrupt and record timestamp
-            if((p->tv_nsec & p->tv_sec == UINT32_MAX)) {
+            if(((p->tv_nsec & p->tv_sec) == UINT32_MAX)) {
                 tx_cur_dma_desc->Status |= ETH_TDES0_IC;
                 tx_cur_dma_desc->Status |= ETH_TDES0_TTSE;
                 tx_ptp_dma_desc = tx_cur_dma_desc;
@@ -636,7 +636,7 @@ static err_t ethernetif_init(struct netif *netif)
         ptp_functions.ptpUpdateFine = ptp_update_fine;
 
         /* Create PTP Tx Timestamp Semaphore */
-        if ((ret = sys_sem_new(&ptp_tx_notify, 1)) != ERR_OK)
+        if ((ret = sys_sem_new(&ptp_tx_notify, 0)) != ERR_OK)
             return ret;
         ptp_functions.ptpTxNotify = &ptp_tx_notify;
 

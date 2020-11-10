@@ -47,15 +47,15 @@ static void startTask1(void *args __attribute((unused))) {
     }
 }
 
-/* Task 2 - Blink Status LED */
-static void startTask2(void *args __attribute((unused))) {
+// /* Task 2 - Blink Status LED */
+// static void startTask2(void *args __attribute((unused))) {
 
-    for (;;) {
-        portStatusLEDToggle();
-        // DEBUG_MESSAGE(DEBUG_TYPE_INFO, "Hi World!!!");
-        vTaskDelay(20000);
-    }
-}
+//     for (;;) {
+//         portStatusLEDToggle();
+//         // DEBUG_MESSAGE(DEBUG_TYPE_INFO, "Hi World!!!");
+//         vTaskDelay(20000);
+//     }
+// }
 
 /* Task 3 - Blink Warning LED */
 static void startTask3(void *args __attribute((unused))) {
@@ -67,8 +67,8 @@ static void startTask3(void *args __attribute((unused))) {
     struct netbuf *buf;
     char * data;
 
-    ip_addr_t dest;
-    dest.addr = htonl(0xc0a82a02); // 192.168.42.2
+    // ip_addr_t dest;
+    // dest.addr = htonl(0xc0a82a02); // 192.168.42.2
 
     conn = netconn_new(NETCONN_UDP);
     netconn_bind(conn, IP_ADDR_ANY, 80); //local port
