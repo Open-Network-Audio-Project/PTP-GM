@@ -1,3 +1,6 @@
+#ifndef __LWIPOPTS_H__
+#define __LWIPOPTS_H__
+
 /**
  * @file
  * @brief lwIP application configuration
@@ -43,6 +46,7 @@
 #define DEFAULT_ACCEPTMBOX_SIZE 6
 
 #if LWIP_FREERTOS_CHECK_CORE_LOCKING
+#ifndef LWIP_PTP_CONTEXT// Bodge to stop multiple redundant declarations
     /** Core locking functions (defined in sys_arch.c) */
     void sys_check_core_locking(void);
     void sys_mark_tcpip_thread(void);
@@ -55,6 +59,7 @@
     #define LWIP_MARK_TCPIP_THREAD()    sys_mark_tcpip_thread()
     #define LOCK_TCPIP_CORE()           sys_lock_tcpip_core()
     #define UNLOCK_TCPIP_CORE()         sys_unlock_tcpip_core()
+#endif /* LWIP_HDR_OPT_H */
 #endif /* LWIP_FREERTOS_CHECK_CORE_LOCKING */
 
 
@@ -71,9 +76,9 @@
 #define CHECKSUM_CHECK_ICMP 0
 
 /** Allow <i>netif</i> functions to be called from another thread */
-#define LWIP_NETIF_API             1
-#define LWIP_NETIF_STATUS_CALLBACK 1
-#define LWIP_NETIF_LINK_CALLBACK   1
+#define LWIP_NETIF_API                  1
+#define LWIP_NETIF_STATUS_CALLBACK      1
+#define LWIP_NETIF_LINK_CALLBACK        1
 
 
 /*---------------------------- lwIP Applications -----------------------------*/
@@ -91,16 +96,29 @@
 
 /** If hostname is given in global_config.h, initialise netif with hostname */
 #ifdef LWIP_HOSTNAME
-    #define LWIP_NETIF_HOSTNAME        1
+    #define LWIP_NETIF_HOSTNAME         1
 #endif /* LWIP_HOSTNAME */
 
 /** Use IGMP - required for PTP and RTP */
-#define LWIP_IGMP                      1
+#define LWIP_IGMP                       1
 
 
-/*-------------------------- Non-lwIP Applications ---------------------------*/
+/*-------------------------- LWIP_PTP Configuration --------------------------*/
+
+#define LWIP_PTP                        1
 
 #if LWIP_PTP
+    /* PTP system time functions */
+    #define LWIP_PTP_GET_TIME           ptp_get_time
+    #define LWIP_PTP_SET_TIME           ptp_set_time
+    #define LWIP_PTP_UPDATE_COARSE      ptp_update_coarse
+    #define LWIP_PTP_UPDATE_FINE        ptp_update_fine
+
+    /* PTP stack timer functions */
+    #define LWIP_PTP_INIT_TIMERS        ptp_init_timers
+    #define LWIP_PTP_START_TIMER        ptp_start_timer
+    #define LWIP_PTP_STOP_TIMER         ptp_stop_timer
+
     #define LWIP_PBUF_CUSTOM_DATA \
                     u32_t tv_sec; \
                     u32_t tv_nsec;    ///< Add timestamp fields to pbuf
@@ -130,3 +148,5 @@
 
 
 /*----------------------------------------------------------------------------*/
+
+#endif /* __LWIPOPTS_H__ */

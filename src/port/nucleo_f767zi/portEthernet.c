@@ -39,6 +39,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
+#include "timers.h"
 /// @todo if performance allows, only use RTOS functions that
 /// are exposed through the lwIP sys.h header file.
 
@@ -54,7 +55,7 @@
     #define PTP_UPDATE_COARSE   0
     #define PTP_UPDATE_FINE     1
 
-    #include <ptpd-lwip.h>
+    #include <lwip-ptp.h>
 #endif /* LWIP_PTP */
 
 /**
@@ -107,42 +108,61 @@ static struct dma_desc *tx_cur_dma_desc;
 static struct dma_desc rx_dma_desc[STIF_NUM_RX_DMA_DESC];
 static struct dma_desc *rx_cur_dma_desc;
 
+#if LWIP_PTP
+    /**
+     * @brief Pointer to DMA descriptor that contains the timestamp data that
+     * is being queried.
+     */
+    static struct dma_desc *tx_ptp_dma_desc;
+
+    /**
+     * @brief Handles for PTP system timers
+     */
+    static TimerHandle_t ptp_timer[LWIP_PTP_NUM_TIMERS];
+#endif /* LWIP_PTP */
+
 /**
  * @brief Task handle for triggering packet reception with a FreeRTOS
  * direct task notification
  */
 static TaskHandle_t eth_task = NULL;
 
-#if LWIP_PTP
-
-/**
- * @brief Semaphore for notifying PTP stack when a transmitted packet has
- * a valid timestamp.
- */
-static sys_sem_t ptp_tx_notify;
-
-/**
- * @brief Pointer to DMA descriptor that contains the timestamp data that
- * is being queried.
- */
-static struct dma_desc *tx_ptp_dma_desc;
-
-#endif /* LWIP_PTP */
 
 /*------------------------------ PTP FUNCTIONS -------------------------------*/
+
+#if LWIP_PTP
+
+static void ptp_timer_callback(TimerHandle_t timer)
+{
+
+}
+
+void ptp_init_timers(bool exists)
+{
+
+}
+
+void ptp_start_timer(u8_t idx, u32_t interval)
+{
+
+}
+
+void ptp_stop_timer(u8_t idx)
+{
+
+}
 
 /* Temp Config Area */
 #define ADJ_FREQ_BASE_INCREMENT   43    // 20ns increment
 #define ADJ_FREQ_BASE_ADDEND      2^32*50000000/SYSCLK_FREQ // see AN3411
-
-#if LWIP_PTP
 
 // Check the validity of these macros! REWRITE!!!!!
 #define PTP_TO_NSEC(SUBSEC)     (u32_t)((uint64_t)(SUBSEC * 1000000000ll) >> 31)
 #define PTP_TO_SUBSEC(NSEC)     (u32_t)((uint64_t)(NSEC * 0x80000000ll) \
                                                             / 1000000000)
 
-static err_t ptp_hw_init(s8_t mode) {
+static err_t ptp_hw_init(s8_t mode)
+{
     /* Disable timestamp interrupt */
     ETH_MACIMR |= ETH_MACIMR_TSTIM;
 
@@ -182,12 +202,14 @@ static err_t ptp_hw_init(s8_t mode) {
     return ERR_OK;
 }
 
-static void ptp_get_time(timestamp_t *timestamp) {
+void ptp_get_time(timestamp_t *timestamp)
+{
     timestamp->secondsField.lsb = ETH_PTPTSHR;
     timestamp->nanosecondsField = PTP_TO_NSEC(ETH_PTPTSLR);
 }
 
-static void ptp_set_time(const timestamp_t *timestamp) {
+void ptp_set_time(const timestamp_t *timestamp)
+{
     /* Write timestamps to registers */
     ETH_PTPTSHUR = timestamp->secondsField.lsb;
     ETH_PTPTSLUR |= PTP_TO_SUBSEC(timestamp->nanosecondsField) & ETH_PTPTSLUR_TSUSS;
@@ -197,7 +219,8 @@ static void ptp_set_time(const timestamp_t *timestamp) {
     while(ETH_PTPTSCR & ETH_PTPTSCR_TSSTI);
 }
 
-static void ptp_update_coarse(const timestamp_t *timestamp, s8_t sign) {
+void ptp_update_coarse(const timestamp_t *timestamp, s8_t sign)
+{
     /* Backup addend (coarse update clears it) */
     u32_t addend = ETH_PTPTSAR;
 
@@ -225,7 +248,8 @@ static void ptp_update_coarse(const timestamp_t *timestamp, s8_t sign) {
     ETH_PTPTSCR |= ETH_PTPTSCR_TTSARU;
 }
 
-static void ptp_update_fine(s32_t adj) {
+void ptp_update_fine(s32_t adj)
+{
     /* Limit maximum frequency adjustment */
     if( adj > 5120000) adj = 5120000;
     if( adj < -5120000) adj = -5120000;
@@ -628,20 +652,8 @@ static err_t ethernetif_init(struct netif *netif)
         if ((ret = ptp_hw_init(PTP_UPDATE_FINE)) != ERR_OK)
             return ret;
 
-        /* Pass PTP device drivers as fptrs to ptpd-lwIP */
-        ptpFunctions_t ptp_functions;
-        ptp_functions.ptpGetTime = ptp_get_time;
-        ptp_functions.ptpSetTime = ptp_set_time;
-        ptp_functions.ptpUpdateCoarse = ptp_update_coarse;
-        ptp_functions.ptpUpdateFine = ptp_update_fine;
-
-        /* Create PTP Tx Timestamp Semaphore */
-        if ((ret = sys_sem_new(&ptp_tx_notify, 0)) != ERR_OK)
-            return ret;
-        ptp_functions.ptpTxNotify = &ptp_tx_notify;
-
         /* Initialise ptpd-lwip */
-        ptpdInit(&ptp_functions, FREERTOS_PRIORITIES - 5);
+        lwipPtpInit(FREERTOS_PRIORITIES - 5);
         /// @todo may need to be moved
     #endif /* LWIP_PTP */
 
@@ -832,8 +844,8 @@ void eth_isr(void)
         tx_ptp_dma_desc->pbuf->tv_sec = tx_ptp_dma_desc->TimeStampHigh;
         tx_ptp_dma_desc->pbuf->tv_nsec = tx_ptp_dma_desc->TimeStampLow;
 
-        // Notify PTP stack using semaphore (optional)
-        sys_sem_signal(&ptp_tx_notify);
+        // Notify PTP stack that timestamp is ready to be read.
+        lwipPtpTxNotify();
         #endif /* LWIP_PTP */
 
         ETH_DMASR = ETH_DMASR_TS;
