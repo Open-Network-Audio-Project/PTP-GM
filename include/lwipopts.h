@@ -118,6 +118,7 @@
     #define LWIP_PTP_INIT_TIMERS        ptp_init_timers
     #define LWIP_PTP_START_TIMER        ptp_start_timer
     #define LWIP_PTP_STOP_TIMER         ptp_stop_timer
+    #define LWIP_PTP_CHECK_TIMER        ptp_check_timer
 
     #define LWIP_PBUF_CUSTOM_DATA \
                     u32_t tv_sec; \

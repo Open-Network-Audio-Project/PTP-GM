@@ -134,22 +134,47 @@ static TaskHandle_t eth_task = NULL;
 
 static void ptp_timer_callback(TimerHandle_t timer)
 {
+    u8_t idx;
 
+    /* Get timer ID and notify PTP stack */
+    idx = (u32_t)pvTimerGetTimerID(timer);
+    lwipPtpTimerExpired((u8_t)idx);
 }
 
-void ptp_init_timers(bool exists)
+err_t ptp_init_timers(void)
 {
-
+    for(u8_t idx = 0; idx < LWIP_PTP_NUM_TIMERS; idx++) {
+        if(ptp_timer[idx] != NULL)
+            xTimerDelete(ptp_timer[idx], portMAX_DELAY);
+        else {
+            /* Create timer: length doesn't matter, this is set timer starts */
+            xTimerCreate("ptp", 100, pdFALSE, (void *)idx, ptp_timer_callback);
+            if(ptp_timer[idx] == NULL)
+                LWIP_DEBUGF(NETIF_DEBUG, ("ptp: timer not allocated!\n"));
+                return ERR_MEM;
+        }
+    }
+    return ERR_OK;
 }
 
 void ptp_start_timer(u8_t idx, u32_t interval)
 {
-
+    xTimerChangePeriod(ptp_timer[idx], (TickType_t)interval, portMAX_DELAY);
 }
 
 void ptp_stop_timer(u8_t idx)
 {
+    xTimerStop(ptp_timer[idx], portMAX_DELAY);
+}
 
+bool ptp_check_timer(u8_t idx)
+{
+    if(xTimerIsTimerActive(ptp_timer[idx]) == pdFALSE) {
+        return true;
+    }
+    else {
+        return false;
+    }
 }
 
 /* Temp Config Area */
