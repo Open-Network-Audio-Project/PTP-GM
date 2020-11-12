@@ -148,10 +148,12 @@ err_t ptp_init_timers(void)
             xTimerDelete(ptp_timer[idx], portMAX_DELAY);
         else {
             /* Create timer: length doesn't matter, this is set timer starts */
-            xTimerCreate("ptp", 100, pdFALSE, (void *)idx, ptp_timer_callback);
-            if(ptp_timer[idx] == NULL)
+            ptp_timer[idx] = xTimerCreate("ptp", 100, pdFALSE, (void *)idx,
+                                                            ptp_timer_callback);
+            if(ptp_timer[idx] == NULL) {
                 LWIP_DEBUGF(NETIF_DEBUG, ("ptp: timer not allocated!\n"));
                 return ERR_MEM;
+            }
         }
     }
     return ERR_OK;

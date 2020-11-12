@@ -82,7 +82,7 @@ static void startTask3(void *args __attribute((unused))) {
         memcpy(data, msg, sizeof(msg));
         netconn_send(conn, buf);
         netbuf_delete(buf); // De-allocate packet buffer
-        vTaskDelay(1000);
+        vTaskDelay(10000);
     }
 }
 
