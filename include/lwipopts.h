@@ -129,14 +129,14 @@
 /*------------------------------- Debugging ----------------------------------*/
 #if DEBUG_LEVEL >= DEBUG_FULL
     /** Use lwIP's built-in printf debugging */
-    #define LWIP_DEBUG
+    // #define LWIP_DEBUG
     // #define MEMP_DEBUG      LWIP_DBG_ON
     // #define PBUF_DEBUG      LWIP_DBG_ON
-    #define IGMP_DEBUG      LWIP_DBG_ON
+    // #define IGMP_DEBUG      LWIP_DBG_ON
     // #define TCPIP_DEBUG     LWIP_DBG_ON
     // #define IP_DEBUG        LWIP_DBG_ON
     // #define DHCP_DEBUG      LWIP_DBG_ON
-    #define NETIF_DEBUG     LWIP_DBG_ON
+    // #define NETIF_DEBUG     LWIP_DBG_ON
     // #define API_LIB_DEBUG   LWIP_DBG_ON
     // #define API_MSG_DEBUG   LWIP_DBG_ON
     // #define RAW_DEBUG       LWIP_DBG_ON

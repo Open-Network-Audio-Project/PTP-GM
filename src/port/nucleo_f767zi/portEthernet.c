@@ -58,6 +58,9 @@
     #include <lwip-ptp.h>
 #endif /* LWIP_PTP */
 
+/// @todo temp debug!
+#include <FreeRTOS-Debug.h>
+
 /**
  * @brief Network interface struct for ethernet port
  */
@@ -180,8 +183,8 @@ bool ptp_check_timer(u32_t idx)
 }
 
 /* Temp Config Area */
-#define ADJ_FREQ_BASE_INCREMENT   43    // 20ns increment
-#define ADJ_FREQ_BASE_ADDEND      2^32*50000000/SYSCLK_FREQ // see AN3411
+#define ADJ_FREQ_BASE_INCREMENT     43    // 20ns increment
+#define ADJ_FREQ_BASE_ADDEND        UINT32_MAX/SYSCLK_FREQ*0x2FAF080
 
 // Check the validity of these macros! REWRITE!!!!!
 #define PTP_TO_NSEC(SUBSEC)     (u32_t)((uint64_t)(SUBSEC * 1000000000ll) >> 31)
@@ -204,9 +207,9 @@ static err_t ptp_hw_init(s8_t mode)
     if(mode == PTP_UPDATE_FINE) {
         /* Set addend based on SYSCLK frequency (see reference manual) */
         ETH_PTPTSAR = ADJ_FREQ_BASE_ADDEND;
-        // printf("ADDEND: %lu\n", ETH_PTPTSAR);
 
         /* Update addend, wait for bit to be cleared */
+        while(ETH_PTPTSCR & ETH_PTPTSCR_TTSARU);
         ETH_PTPTSCR |= ETH_PTPTSCR_TTSARU;
         while(ETH_PTPTSCR & ETH_PTPTSCR_TTSARU);
 
@@ -216,6 +219,7 @@ static err_t ptp_hw_init(s8_t mode)
     else {
         /* Configure for coarse update */
         ETH_PTPTSCR &= ~ETH_PTPTSCR_TSFCU;
+        /// @todo addend may also need to be set in coarse update mode.
     }
 
     /// @todo does timestamp need to be set here?

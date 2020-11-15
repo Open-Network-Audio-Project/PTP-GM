@@ -26,6 +26,8 @@
 
 #include <stdio.h>
 
+#include <lwip-ptp.h>
+
 /* Stack Overflow Handler - move elsewhere */
 extern void vApplicationStackOverflowHook(
     xTaskHandle *pxTask,
@@ -40,9 +42,12 @@ void vApplicationStackOverflowHook(
 
 /* Task 1 - Blink System LED */
 static void startTask1(void *args __attribute((unused))) {
+    timestamp_t time;
 
     for (;;) {
         portSystemLEDToggle();
+        // LWIP_PTP_GET_TIME(&time);
+        // printf("ptp: s - %lu - ns - %lu\n", time.secondsField.lsb, time.nanosecondsField);
         vTaskDelay(1000);
     }
 }
