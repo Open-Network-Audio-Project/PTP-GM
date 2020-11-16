@@ -184,7 +184,9 @@ bool ptp_check_timer(u32_t idx)
 
 /* Temp Config Area */
 #define ADJ_FREQ_BASE_INCREMENT     43    // 20ns increment
-#define ADJ_FREQ_BASE_ADDEND        UINT32_MAX/SYSCLK_FREQ*0x2FAF080
+// #define ADJ_FREQ_BASE_ADDEND        UINT32_MAX/SYSCLK_FREQ*0x2FAF080
+#define ADJ_FREQ_BASE_ADDEND        2*0x3B9AC9FF/SYSCLK_FREQ*0x2FAF080
+// use digital rollover
 
 // Check the validity of these macros! REWRITE!!!!!
 #define PTP_TO_NSEC(SUBSEC)     (u32_t)((uint64_t)(SUBSEC * 1000000000ll) >> 31)
@@ -199,6 +201,9 @@ static err_t ptp_hw_init(s8_t mode)
     /* Enable timestamps for relevant packets */
     ETH_PTPTSCR |= ETH_PTPTSCR_TSE | ETH_PTPTSCR_TSSIPV4FE |
                         ETH_PTPTSCR_TSSIPV6FE | ETH_PTPTSCR_TSSARFE;
+
+    /* Use digital rollover (makes maths easier!) */
+    ETH_PTPTSCR |= ETH_PTPTSCR_TSSSR;
     /// @todo restrict to IPV4/IPV6 later (OR JUST PTP?)
 
     /* Set smallest clock adjustment increment (20ns) */
@@ -236,14 +241,24 @@ static err_t ptp_hw_init(s8_t mode)
 void ptp_get_time(timestamp_t *timestamp)
 {
     timestamp->secondsField.lsb = ETH_PTPTSHR;
-    timestamp->nanosecondsField = PTP_TO_NSEC(ETH_PTPTSLR);
+    timestamp->nanosecondsField = ETH_PTPTSLR & ETH_PTPTSLR_STSS;
 }
 
 void ptp_set_time(const timestamp_t *timestamp)
 {
+    timestamp_t oldtime;
+    ptp_get_time(&oldtime);
+    printf("ptp - oldt: s - %lu - ns - %lu\n", oldtime.secondsField.lsb,
+                                                oldtime.nanosecondsField);
     /* Write timestamps to registers */
     ETH_PTPTSHUR = timestamp->secondsField.lsb;
-    ETH_PTPTSLUR |= PTP_TO_SUBSEC(timestamp->nanosecondsField) & ETH_PTPTSLUR_TSUSS;
+    ETH_PTPTSLUR = timestamp->nanosecondsField & ETH_PTPTSLUR_TSUSS;
+    printf("ptp - time: s - %lu - ns - %lu\n", timestamp->secondsField.lsb,
+                                                timestamp->nanosecondsField);
+    timestamp_t newtime;
+    ptp_get_time(&newtime);
+    printf("ptp-actual: s - %lu - ns - %lu\n", newtime.secondsField.lsb,
+                                                newtime.nanosecondsField);
 
     /* Reinitialise timestamping and wait for bit to be cleared */
     ETH_PTPTSCR |= ETH_PTPTSCR_TSSTI;
@@ -268,9 +283,10 @@ void ptp_update_coarse(const timestamp_t *timestamp, s8_t sign)
 
     /* Write timestamps to registers */
     ETH_PTPTSHUR = timestamp->secondsField.lsb;
-    ETH_PTPTSLUR |= PTP_TO_SUBSEC(timestamp->nanosecondsField) & ETH_PTPTSLUR_TSUSS;
+    ETH_PTPTSLUR = timestamp->nanosecondsField & ETH_PTPTSLUR_TSUSS;
 
     /* Update timestamps */
+    while(ETH_PTPTSCR & ETH_PTPTSCR_TTSARU);
     ETH_PTPTSCR |= ETH_PTPTSCR_TSSTU;
     while(ETH_PTPTSCR & ETH_PTPTSCR_TSSTU);
 
