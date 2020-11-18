@@ -11,6 +11,7 @@
 /* Inclue FreeRTOS headers */
 #include <FreeRTOS.h>
 #include <task.h>
+#include <timers.h>
 
 /* Include FreeRTOS-Debug library headers */
 #include <FreeRTOS-Debug.h>
@@ -40,15 +41,25 @@ void vApplicationStackOverflowHook(
     for(;;);    // Loop forever here..
 }
 
+// static void print_time(TimerHandle_t timer) {
+//     timestamp_t time;
+//     LWIP_PTP_GET_TIME(&time);
+//     printf("ptp: s - %lu - ns - %lu\n", time.secondsField.lsb,
+//                                             time.nanosecondsField);
+// }
+
 /* Task 1 - Blink System LED */
 static void startTask1(void *args __attribute((unused))) {
-    timestamp_t time;
+    // TimerHandle_t timer;
+
+    // timer = xTimerCreate("stamp", 1000, pdTRUE, NULL, print_time);
+    // xTimerStart(timer, portMAX_DELAY);
 
     for (;;) {
         portSystemLEDToggle();
-        // LWIP_PTP_GET_TIME(&time);
-        // printf("ptp: s - %lu - ns - %lu\n", time.secondsField.lsb, time.nanosecondsField);
-        vTaskDelay(1000);
+        printf("A_In: %d\n", portReadInput(3));
+        ptp_update_fine(512000);
+        vTaskDelay(500);
     }
 }
 

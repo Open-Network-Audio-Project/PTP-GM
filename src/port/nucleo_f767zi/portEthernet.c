@@ -32,6 +32,7 @@
 #include <libopencm3/stm32/flash.h>
 #include <libopencm3/stm32/pwr.h>
 #include <libopencm3/stm32/desig.h>
+#include <libopencm3/stm32/timer.h>
 #include <libopencm3/ethernet/mac.h>
 #include <libopencm3/ethernet/phy.h>
 
@@ -55,7 +56,37 @@
     #define PTP_UPDATE_COARSE   0
     #define PTP_UPDATE_FINE     1
 
+    #define PTP_PPS             1
+
     #include <lwip-ptp.h>
+
+
+    /// @todo Temporary register definitions that are missing from libopencm3
+    /// Pull request has been put in for this to be fixed.
+    #define ETH_PTPPPSCR    MMIO32(ETHERNET_BASE + 0x72C)
+    #define ETH_PTPPPSCR_PPSFREQ                (0x0F<<0)
+    #define ETH_PTPPPSCR_PPSFREQ_1HZ            (0x00<<0)
+    #define ETH_PTPPPSCR_PPSFREQ_2HZ            (0x01<<0)
+    #define ETH_PTPPPSCR_PPSFREQ_4HZ            (0x02<<0)
+    #define ETH_PTPPPSCR_PPSFREQ_8HZ            (0x03<<0)
+    #define ETH_PTPPPSCR_PPSFREQ_16HZ           (0x04<<0)
+    #define ETH_PTPPPSCR_PPSFREQ_32HZ           (0x05<<0)
+    #define ETH_PTPPPSCR_PPSFREQ_64HZ           (0x06<<0)
+    #define ETH_PTPPPSCR_PPSFREQ_128HZ          (0x07<<0)
+    #define ETH_PTPPPSCR_PPSFREQ_256HZ          (0x08<<0)
+    #define ETH_PTPPPSCR_PPSFREQ_512HZ          (0x09<<0)
+    #define ETH_PTPPPSCR_PPSFREQ_1024HZ         (0x0A<<0)
+    #define ETH_PTPPPSCR_PPSFREQ_2048HZ         (0x0B<<0)
+    #define ETH_PTPPPSCR_PPSFREQ_4096HZ         (0x0C<<0)
+    #define ETH_PTPPPSCR_PPSFREQ_8192HZ         (0x0D<<0)
+    #define ETH_PTPPPSCR_PPSFREQ_16384HZ        (0x0E<<0)
+    #define ETH_PTPPPSCR_PPSFREQ_32768HZ        (0x0F<<0)
+
+    /// @todo Timer omissions in libopencm3 not PR'ed yet.
+    #define TIM2_OR     MMIO32(TIM2_BASE + 0x50)
+    #define TIM2_OR_TI4_RMP                     (0x03<<10)
+    #define TIM2_OR_TI4_RMP_ETH_PTP             (0x01<<10)
+
 #endif /* LWIP_PTP */
 
 /// @todo temp debug!
@@ -184,8 +215,8 @@ bool ptp_check_timer(u32_t idx)
 
 /* Temp Config Area */
 #define ADJ_FREQ_BASE_INCREMENT     43    // 20ns increment
-// #define ADJ_FREQ_BASE_ADDEND        UINT32_MAX/SYSCLK_FREQ*0x2FAF080
-#define ADJ_FREQ_BASE_ADDEND        2*0x3B9AC9FF/SYSCLK_FREQ*0x2FAF080
+#define ADJ_FREQ_BASE_ADDEND        UINT32_MAX/SYSCLK_FREQ*0x2FAF080
+// #define ADJ_FREQ_BASE_ADDEND        2*0x3B9AC9FF/SYSCLK_FREQ*0x2FAF080
 // use digital rollover
 
 // Check the validity of these macros! REWRITE!!!!!
@@ -203,8 +234,14 @@ static err_t ptp_hw_init(s8_t mode)
                         ETH_PTPTSCR_TSSIPV6FE | ETH_PTPTSCR_TSSARFE;
 
     /* Use digital rollover (makes maths easier!) */
-    ETH_PTPTSCR |= ETH_PTPTSCR_TSSSR;
+    // ETH_PTPTSCR |= ETH_PTPTSCR_TSSSR;
     /// @todo restrict to IPV4/IPV6 later (OR JUST PTP?)
+
+    #if PTP_PPS
+        /* Configure PPS output */
+        ETH_PTPPPSCR = ETH_PTPPPSCR_PPSFREQ_32768HZ;
+        TIM2_OR = TIM2_OR_TI4_RMP_ETH_PTP; // Enable PPS output.
+    #endif /* PTP_PPS */
 
     /* Set smallest clock adjustment increment (20ns) */
     ETH_PTPSSIR = ETH_PTPSSIR_STSSI & ADJ_FREQ_BASE_INCREMENT;
@@ -255,14 +292,15 @@ void ptp_set_time(const timestamp_t *timestamp)
     ETH_PTPTSLUR = timestamp->nanosecondsField & ETH_PTPTSLUR_TSUSS;
     printf("ptp - time: s - %lu - ns - %lu\n", timestamp->secondsField.lsb,
                                                 timestamp->nanosecondsField);
-    timestamp_t newtime;
-    ptp_get_time(&newtime);
-    printf("ptp-actual: s - %lu - ns - %lu\n", newtime.secondsField.lsb,
-                                                newtime.nanosecondsField);
 
     /* Reinitialise timestamping and wait for bit to be cleared */
     ETH_PTPTSCR |= ETH_PTPTSCR_TSSTI;
     while(ETH_PTPTSCR & ETH_PTPTSCR_TSSTI);
+
+    timestamp_t newtime;
+    ptp_get_time(&newtime);
+    printf("ptp-actual: s - %lu - ns - %lu\n", newtime.secondsField.lsb,
+                                                newtime.nanosecondsField);
 }
 
 void ptp_update_coarse(const timestamp_t *timestamp, s8_t sign)
@@ -748,11 +786,21 @@ static void eth_hw_init(void)
             GPIO_ETH_RMII_REF_CLK | GPIO_ETH_RMII_CRS_DV);
 
     /* GPIOB */
-    gpio_set_output_options(GPIOB, GPIO_OTYPE_PP,
-            GPIO_OSPEED_50MHZ, GPIO_ETH_RMII_TXD1);
-    gpio_set_af(GPIOB, GPIO_AF11, GPIO_ETH_RMII_TXD1);
-    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO_ETH_RMII_TXD1);
-    /// @todo PPS definition to go here when implemented
+    gpio_set_output_options(GPIOB, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ,
+                                                #if PTP_PPS
+                                                    GPIO_ETH_RMII_PPS_OUT |
+                                                #endif /* PTP_PPS */
+                                                GPIO_ETH_RMII_TXD1);
+    gpio_set_af(GPIOB, GPIO_AF11,
+                                                #if PTP_PPS
+                                                    GPIO_ETH_RMII_PPS_OUT |
+                                                #endif /* PTP_PPS */
+                                                GPIO_ETH_RMII_TXD1);
+    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_NONE,
+                                                #if PTP_PPS
+                                                    GPIO_ETH_RMII_PPS_OUT |
+                                                #endif /* PTP_PPS */
+                                                GPIO_ETH_RMII_TXD1);
 
     /* GPIOC */
     gpio_set_output_options(GPIOC, GPIO_OTYPE_PP,

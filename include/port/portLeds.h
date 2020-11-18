@@ -16,6 +16,9 @@
 
 /*----------------------------- PUBLIC FUNCTIONS -----------------------------*/
 
+/// @todo temporary!
+unsigned int portReadInput(unsigned char pin);
+
 /**
  * @brief Initialise the LEDs as outputs
 */
