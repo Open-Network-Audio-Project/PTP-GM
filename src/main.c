@@ -57,9 +57,14 @@ static void startTask1(void *args __attribute((unused))) {
 
     for (;;) {
         portSystemLEDToggle();
-        printf("A_In: %d\n", portReadInput(3));
-        ptp_update_fine(512000);
-        vTaskDelay(500);
+        unsigned int i = (portReadInput(3) - 2048) * 2750;
+        ptp_update_fine(i);
+        timestamp_t time;
+        time.secondsField.lsb = 1606244247;
+        time.nanosecondsField = 504000400;
+        ptp_set_time(&time);
+        // printf("Time: s - %lu - ns - %lu\n", time.secondsField.lsb, time.nanosecondsField);
+        vTaskDelay(1100);
     }
 }
 

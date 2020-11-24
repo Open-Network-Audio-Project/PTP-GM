@@ -213,16 +213,61 @@ bool ptp_check_timer(u32_t idx)
     }
 }
 
-/* Temp Config Area */
-#define ADJ_FREQ_BASE_INCREMENT     43    // 20ns increment
-#define ADJ_FREQ_BASE_ADDEND        UINT32_MAX/SYSCLK_FREQ*0x2FAF080
-// #define ADJ_FREQ_BASE_ADDEND        2*0x3B9AC9FF/SYSCLK_FREQ*0x2FAF080
-// use digital rollover
+/*------------------------------- Clock Maths --------------------------------*/
 
-// Check the validity of these macros! REWRITE!!!!!
-#define PTP_TO_NSEC(SUBSEC)     (u32_t)((uint64_t)(SUBSEC * 1000000000ll) >> 31)
-#define PTP_TO_SUBSEC(NSEC)     (u32_t)((uint64_t)(NSEC * 0x80000000ll) \
-                                                            / 1000000000)
+/**
+ * @brief Value by which the subsecond register is incremented.
+ * This value is calculated by dividing the desired smallest time increment
+ * and dividing it by the time that corresponds to 1 subsecond register
+ * increment. With decimal rollover, each increment corresponds to 1 nanosecond.
+ * With binary rollover, each increment = 1/2^31 = approx. 0.466 nanoseconds.
+ *
+ * For a 20 nanosecond smallest time increment, this register should be set to
+ * 20/0.466 = approx. 43 (nearest integer). This increment isn't exactly 20
+ * nanoseconds, but the clock that updates the subsecond register is adjusted
+ * to make the clock run faster/slower, so this doesn't matter.
+ */
+#define ADJ_FREQ_BASE_INCREMENT         43
+
+/**
+ * @brief Base value for the system clock addend.
+ * This value is set so that the subsecond register is nominally incremented
+ * with a time period that matches that of the ADJ_FREQ_BASE_INCREMENT.
+ * For a 20 nanosecond base increment, the increment frequency should be
+ * 1/2*10^-9 = 50 MHz. The addend should be set to the following value:
+ *
+ *         2 * Number of Subsecond Increments / Clock Ratio
+ *
+ * The number of subsecond increments is 2^31 for binary rollover, while 10^9
+ * is used for decimal rollover. The clock ratio is the target frequency divided
+ * by the input frequency. On an STM32, the input clock is the SYSCLK.
+ * The floating point calculation used in this definition gets close enough,
+ * as the value will be tweaked by the fine-update function anyway.
+ */
+#define ADJ_FREQ_BASE_ADDEND        (uint32_t)(UINT32_MAX*(50000000 \
+                                                        / (float)SYSCLK_FREQ))
+
+/**
+ * @brief Macro to convert subseconds to nanoseconds.
+ * Converts a value that is given in subseconds to a value that is given in
+ * nanoseconds. Note that there are 10^9/2^31 nanoseconds in a subsecond if
+ * binary rollover is used, and 1 nanosecond in a subsecond if decimal rollover
+ * is used.
+ */
+#define PTP_TO_NSEC(SUBSEC)     (u32_t)(((uint64_t)(SUBSEC) * 1000000000ll)  \
+                                                                        >> 31)
+
+/**
+ * @brief Macro to convert nanoseconds to subseconds.
+ * Converts a value that is given in nanoseconds to a value that is given in
+ * subseconds. Note that there are 10^9/2^31 nanoseconds in a subsecond if
+ * binary rollover is used, and 1 nanosecond in a subsecond if decimal rollover
+ * is used.
+ */
+#define PTP_TO_SUBSEC(NSEC)     (u32_t)(((uint64_t)(NSEC) * 0x80000000ll) \
+                                                                 / 1000000000)
+
+/*-------------------------- PTP Hardware Functions --------------------------*/
 
 static err_t ptp_hw_init(s8_t mode)
 {
@@ -278,29 +323,19 @@ static err_t ptp_hw_init(s8_t mode)
 void ptp_get_time(timestamp_t *timestamp)
 {
     timestamp->secondsField.lsb = ETH_PTPTSHR;
-    timestamp->nanosecondsField = ETH_PTPTSLR & ETH_PTPTSLR_STSS;
+    timestamp->nanosecondsField = PTP_TO_NSEC(ETH_PTPTSLR & ETH_PTPTSLR_STSS);
 }
 
 void ptp_set_time(const timestamp_t *timestamp)
 {
-    timestamp_t oldtime;
-    ptp_get_time(&oldtime);
-    printf("ptp - oldt: s - %lu - ns - %lu\n", oldtime.secondsField.lsb,
-                                                oldtime.nanosecondsField);
     /* Write timestamps to registers */
     ETH_PTPTSHUR = timestamp->secondsField.lsb;
-    ETH_PTPTSLUR = timestamp->nanosecondsField & ETH_PTPTSLUR_TSUSS;
-    printf("ptp - time: s - %lu - ns - %lu\n", timestamp->secondsField.lsb,
-                                                timestamp->nanosecondsField);
+    ETH_PTPTSLUR = PTP_TO_SUBSEC(timestamp->nanosecondsField)
+                                                        & ETH_PTPTSLUR_TSUSS;
 
     /* Reinitialise timestamping and wait for bit to be cleared */
     ETH_PTPTSCR |= ETH_PTPTSCR_TSSTI;
     while(ETH_PTPTSCR & ETH_PTPTSCR_TSSTI);
-
-    timestamp_t newtime;
-    ptp_get_time(&newtime);
-    printf("ptp-actual: s - %lu - ns - %lu\n", newtime.secondsField.lsb,
-                                                newtime.nanosecondsField);
 }
 
 void ptp_update_coarse(const timestamp_t *timestamp, s8_t sign)
@@ -321,7 +356,7 @@ void ptp_update_coarse(const timestamp_t *timestamp, s8_t sign)
 
     /* Write timestamps to registers */
     ETH_PTPTSHUR = timestamp->secondsField.lsb;
-    ETH_PTPTSLUR = timestamp->nanosecondsField & ETH_PTPTSLUR_TSUSS;
+    ETH_PTPTSLUR = PTP_TO_SUBSEC(timestamp->nanosecondsField) & ETH_PTPTSLUR_TSUSS;
 
     /* Update timestamps */
     while(ETH_PTPTSCR & ETH_PTPTSCR_TTSARU);
@@ -333,15 +368,20 @@ void ptp_update_coarse(const timestamp_t *timestamp, s8_t sign)
     ETH_PTPTSCR |= ETH_PTPTSCR_TTSARU;
 }
 
+/// @todo verify that this maths is fine! Make sure clock adjustment is in PPB.
 void ptp_update_fine(s32_t adj)
 {
+    /* Ensures that floating point maths is only performed once if compiler
+       optimisation does not convert the macro to a literal constant */
+    static uint32_t base_addend = ADJ_FREQ_BASE_ADDEND;
+
     /* Limit maximum frequency adjustment */
     if( adj > 5120000) adj = 5120000;
     if( adj < -5120000) adj = -5120000;
 
     /* Addend estimation (from AN3411) */
     u32_t addend = ((((275LL * adj)>>8) *
-                    (ADJ_FREQ_BASE_ADDEND>>24))>>6) + (ADJ_FREQ_BASE_ADDEND);
+                    (base_addend>>24))>>6) + (base_addend);
 
     /* Update addend */
     ETH_PTPTSAR = addend;
