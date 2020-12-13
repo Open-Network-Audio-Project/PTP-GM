@@ -47,6 +47,11 @@ void vApplicationStackOverflowHook(
 //     printf("ptp: s - %lu - ns - %lu\n", time.secondsField.lsb,
 //                                             time.nanosecondsField);
 // }
+#define PTP_TO_NSEC(SUBSEC)     (u32_t)(((uint64_t)(SUBSEC) * 1000000000ll)  \
+                                                                        >> 31)
+
+#define PTP_TO_SUBSEC(NSEC)     (u32_t)(((uint64_t)(NSEC) * 0x80000000ll) \
+                                                                 / 1000000000)
 
 /* Task 1 - Blink System LED */
 static void startTask1(void *args __attribute((unused))) {
@@ -57,14 +62,18 @@ static void startTask1(void *args __attribute((unused))) {
 
     for (;;) {
         portSystemLEDToggle();
-        unsigned int i = (portReadInput(3) - 2048) * 2750;
-        ptp_update_fine(i);
-        timestamp_t time;
-        time.secondsField.lsb = 1606244247;
-        time.nanosecondsField = 504000400;
-        ptp_set_time(&time);
+        // unsigned int i = (portReadInput(3) - 2048) * 2750;
+        // ptp_update_fine(i);
+        // printf('ADJ: %u\n', i);
+        // timestamp_t time;
+        // time.secondsField.lsb = 1606244247;
+        // time.nanosecondsField = 504000400;
+        // printf("TNew: s - %lu - ns - %lu\n", time.secondsField.lsb, time.nanosecondsField);
+        // time.nanosecondsField = PTP_TO_NSEC(PTP_TO_SUBSEC(time.nanosecondsField));
+        // // ptp_set_time(&time);
         // printf("Time: s - %lu - ns - %lu\n", time.secondsField.lsb, time.nanosecondsField);
-        vTaskDelay(1100);
+        // ptp_get_time(&time);
+        vTaskDelay(1000);
     }
 }
 

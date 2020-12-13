@@ -380,8 +380,10 @@ void ptp_update_fine(s32_t adj)
     if( adj < -5120000) adj = -5120000;
 
     /* Addend estimation (from AN3411) */
-    u32_t addend = ((((275LL * adj)>>8) *
-                    (base_addend>>24))>>6) + (base_addend);
+    // u32_t addend = ((((275LL * adj)>>8) *
+                    // (base_addend>>24))>>6) + (base_addend);
+
+    u32_t addend = base_addend + (s32_t)(2 * (float)adj);
 
     /* Update addend */
     ETH_PTPTSAR = addend;
@@ -506,7 +508,8 @@ static int process_rx_descr(struct netif *netif)
     /* Copy PTP timestamps to pbuf */
     #if LWIP_PTP
         rx_cur_dma_desc->pbuf->tv_sec = rx_cur_dma_desc->TimeStampHigh;
-        rx_cur_dma_desc->pbuf->tv_nsec = rx_cur_dma_desc->TimeStampLow;
+        rx_cur_dma_desc->pbuf->tv_nsec = PTP_TO_NSEC(rx_cur_dma_desc->
+                                               TimeStampLow & ETH_PTPTSLR_STSS);
     #endif /* LWIP_PTP */
 
     /* Pass packet to lwIP */
@@ -977,7 +980,8 @@ void eth_isr(void)
         #if LWIP_PTP
         // Copy timestamp from descriptor to pbuf
         tx_ptp_dma_desc->pbuf->tv_sec = tx_ptp_dma_desc->TimeStampHigh;
-        tx_ptp_dma_desc->pbuf->tv_nsec = tx_ptp_dma_desc->TimeStampLow;
+        tx_ptp_dma_desc->pbuf->tv_nsec = PTP_TO_NSEC(tx_ptp_dma_desc->
+                                               TimeStampLow & ETH_PTPTSLR_STSS);
 
         // Notify PTP stack that timestamp is ready to be read.
         lwipPtpTxNotify();
