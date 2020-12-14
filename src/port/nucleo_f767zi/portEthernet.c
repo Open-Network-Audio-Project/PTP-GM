@@ -267,6 +267,12 @@ bool ptp_check_timer(u32_t idx)
 #define PTP_TO_SUBSEC(NSEC)     (u32_t)(((uint64_t)(NSEC) * 0x80000000ll) \
                                                                  / 1000000000)
 
+/**
+ * @brief Maximum time adjustment factor in PPB.
+ * This value is from the ntp_adjtime syscall in the Linux kernel.
+ */
+#define PTP_MAX_ADJ     32768000
+
 /*-------------------------- PTP Hardware Functions --------------------------*/
 
 static err_t ptp_hw_init(s8_t mode)
@@ -376,8 +382,8 @@ void ptp_update_fine(s32_t adj)
     static uint32_t base_addend = ADJ_FREQ_BASE_ADDEND;
 
     /* Limit maximum frequency adjustment */
-    if( adj > 5120000) adj = 5120000;
-    if( adj < -5120000) adj = -5120000;
+    if( adj > PTP_MAX_ADJ) adj = PTP_MAX_ADJ;
+    if( adj < -PTP_MAX_ADJ) adj = -PTP_MAX_ADJ;
 
     /* Addend estimation (from AN3411) */
     // u32_t addend = ((((275LL * adj)>>8) *
