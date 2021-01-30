@@ -61,26 +61,26 @@
     #include <lwip-ptp.h>
 
 
-    /// @todo Temporary register definitions that are missing from libopencm3
-    /// Pull request has been put in for this to be fixed.
-    #define ETH_PTPPPSCR    MMIO32(ETHERNET_BASE + 0x72C)
-    #define ETH_PTPPPSCR_PPSFREQ                (0x0F<<0)
-    #define ETH_PTPPPSCR_PPSFREQ_1HZ            (0x00<<0)
-    #define ETH_PTPPPSCR_PPSFREQ_2HZ            (0x01<<0)
-    #define ETH_PTPPPSCR_PPSFREQ_4HZ            (0x02<<0)
-    #define ETH_PTPPPSCR_PPSFREQ_8HZ            (0x03<<0)
-    #define ETH_PTPPPSCR_PPSFREQ_16HZ           (0x04<<0)
-    #define ETH_PTPPPSCR_PPSFREQ_32HZ           (0x05<<0)
-    #define ETH_PTPPPSCR_PPSFREQ_64HZ           (0x06<<0)
-    #define ETH_PTPPPSCR_PPSFREQ_128HZ          (0x07<<0)
-    #define ETH_PTPPPSCR_PPSFREQ_256HZ          (0x08<<0)
-    #define ETH_PTPPPSCR_PPSFREQ_512HZ          (0x09<<0)
-    #define ETH_PTPPPSCR_PPSFREQ_1024HZ         (0x0A<<0)
-    #define ETH_PTPPPSCR_PPSFREQ_2048HZ         (0x0B<<0)
-    #define ETH_PTPPPSCR_PPSFREQ_4096HZ         (0x0C<<0)
-    #define ETH_PTPPPSCR_PPSFREQ_8192HZ         (0x0D<<0)
-    #define ETH_PTPPPSCR_PPSFREQ_16384HZ        (0x0E<<0)
-    #define ETH_PTPPPSCR_PPSFREQ_32768HZ        (0x0F<<0)
+    // /// @todo Temporary register definitions that are missing from libopencm3
+    // /// Pull request has been put in for this to be fixed.
+    // #define ETH_PTPPPSCR    MMIO32(ETHERNET_BASE + 0x72C)
+    // #define ETH_PTPPPSCR_PPSFREQ                (0x0F<<0)
+    // #define ETH_PTPPPSCR_PPSFREQ_1HZ            (0x00<<0)
+    // #define ETH_PTPPPSCR_PPSFREQ_2HZ            (0x01<<0)
+    // #define ETH_PTPPPSCR_PPSFREQ_4HZ            (0x02<<0)
+    // #define ETH_PTPPPSCR_PPSFREQ_8HZ            (0x03<<0)
+    // #define ETH_PTPPPSCR_PPSFREQ_16HZ           (0x04<<0)
+    // #define ETH_PTPPPSCR_PPSFREQ_32HZ           (0x05<<0)
+    // #define ETH_PTPPPSCR_PPSFREQ_64HZ           (0x06<<0)
+    // #define ETH_PTPPPSCR_PPSFREQ_128HZ          (0x07<<0)
+    // #define ETH_PTPPPSCR_PPSFREQ_256HZ          (0x08<<0)
+    // #define ETH_PTPPPSCR_PPSFREQ_512HZ          (0x09<<0)
+    // #define ETH_PTPPPSCR_PPSFREQ_1024HZ         (0x0A<<0)
+    // #define ETH_PTPPPSCR_PPSFREQ_2048HZ         (0x0B<<0)
+    // #define ETH_PTPPPSCR_PPSFREQ_4096HZ         (0x0C<<0)
+    // #define ETH_PTPPPSCR_PPSFREQ_8192HZ         (0x0D<<0)
+    // #define ETH_PTPPPSCR_PPSFREQ_16384HZ        (0x0E<<0)
+    // #define ETH_PTPPPSCR_PPSFREQ_32768HZ        (0x0F<<0)
 
     /// @todo Timer omissions in libopencm3 not PR'ed yet.
     #define TIM2_OR     MMIO32(TIM2_BASE + 0x50)
